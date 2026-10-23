@@ -12,7 +12,7 @@
     t2: { name: "전산세무 2급", file: "data/t2.json", je: null }
   };
   var KIND = { gen: "일반전표", vat: "매입매출", fix: "오류수정", close: "결산" };
-  var JE_N = 10;
+  function jeN() { return DATA && DATA.questions.some(function (q) { return q.k === "vat"; }) ? 15 : 10; }
   S.subj = (function () { var v = sget0("passup.subj"); return SUBJ[v] ? v : "k1"; })();
   S.areaPref = sget0("passup.area") === "je" ? "je" : "th";
   S.area = S.areaPref === "je" && SUBJ[S.subj].je ? "je" : "th";
@@ -182,8 +182,50 @@
     var neg = /^\s*[-−]/.test(s), d = String(s).replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
     return (neg ? "-" : "") + (d ? Number(d).toLocaleString("ko-KR") : "");
   }
-  function jeInit(it) { if (!it.dr) it.dr = [["", ""]]; if (!it.cr) it.cr = [["", ""]]; }
-  function jeFilled(it) { return [].concat(it.dr || [], it.cr || []).some(function (l) { return normAcc(l[0]) || num(l[1]); }); }
+  function jeInit(it) {
+    if (!it.dr) it.dr = [["", ""]]; if (!it.cr) it.cr = [["", ""]];
+    var q = BY_ID[it.id]; if (q && q.v && !it.v) it.v = { type: "", supply: "", tax: "", elec: "", reason: "", zr: "", te: false };
+  }
+  function jeFilled(it) { return (it.v && !!it.v.type) || [].concat(it.dr || [], it.cr || []).some(function (l) { return normAcc(l[0]) || num(l[1]); }); }
+  // ---------- 매입매출 머리(유형·공급가액·부가세·전자·불공제사유·영세율구분) ----------
+  var VT = [["11", "과세"], ["12", "영세"], ["13", "면세"], ["14", "건별"], ["15", "간이"], ["16", "수출"], ["17", "카과"], ["18", "카면"], ["19", "카영"], ["20", "면건"], ["21", "전자"], ["22", "현과"], ["23", "현면"], ["24", "현영"],
+    ["51", "과세"], ["52", "영세"], ["53", "면세"], ["54", "불공"], ["55", "수입"], ["56", "금전"], ["57", "카과"], ["58", "카면"], ["59", "카영"], ["60", "면건"], ["61", "현과"], ["62", "현면"]];
+  var V_ELEC = ["11", "12", "13", "51", "52", "53", "54", "55"];
+  var V_TAX10 = ["11", "14", "17", "22", "51", "54", "55", "57", "61"];
+  var V_ZR = ["12", "16"];
+  var REASON = { 1: "①필요적 기재사항 누락 등", 2: "②사업과 직접 관련 없는 지출", 3: "③개별소비세법 제1조제2항제3호에 따른 자동차 구입·유지 및 임차", 4: "④기업업무추진비 및 이와 유사한 비용 관련", 5: "⑤면세사업 관련", 6: "⑥토지의 자본적 지출 관련", 7: "⑦사업자등록 전 매입세액" };
+  var ZR = { 1: "①직접수출(대행수출 포함)", 2: "②중계무역·위탁판매·외국인도 또는 위탁가공무역 방식의 수출", 3: "③내국신용장·구매확인서에 의하여 공급하는 재화" };
+  function vtName(c) { for (var i = 0; i < VT.length; i++) if (VT[i][0] === String(c)) return VT[i][0] + "." + VT[i][1]; return String(c || ""); }
+  // 정답 머리와 비교: 항목별 맞음 여부
+  function vCheck(u, a) {
+    var r = { type: String(u.type) === String(a.type), supply: num(u.supply) === (a.supply || 0), tax: num(u.tax) === (a.tax || 0) };
+    if (a.elec === true || a.elec === false) r.elec = u.elec === (a.elec ? "1" : "0");
+    if (String(a.type) === "54") r.reason = +u.reason === +a.reason;
+    if (V_ZR.indexOf(String(a.type)) >= 0 && a.zr) r.zr = +u.zr === +a.zr;
+    r.all = Object.keys(r).every(function (k) { return r[k]; });
+    return r;
+  }
+  function vHtml(q, it, vc, editable) {
+    var v = it.v, dis = editable ? "" : " disabled", t = String(v.type);
+    function mk(k) { return vc ? (vc[k] === undefined ? "" : vc[k] ? " ok" : " ng") : ""; }
+    function opt(map, cur) { return '<option value="">선택</option>' + Object.keys(map).map(function (c) { return '<option value="' + c + '"' + (String(cur) === c ? " selected" : "") + ">" + esc(map[c]) + "</option>"; }).join(""); }
+    var types = '<option value="">유형 선택</option><optgroup label="매출">' + VT.filter(function (x) { return x[0] < "50"; }).map(function (x) { return '<option value="' + x[0] + '"' + (t === x[0] ? " selected" : "") + ">" + x[0] + "." + x[1] + "</option>"; }).join("") +
+      '</optgroup><optgroup label="매입">' + VT.filter(function (x) { return x[0] > "50"; }).map(function (x) { return '<option value="' + x[0] + '"' + (t === x[0] ? " selected" : "") + ">" + x[0] + "." + x[1] + "</option>"; }).join("") + "</optgroup>";
+    var h = '<div class="vh"><div class="vh-r"><label class="vf' + mk("type") + '"><span>유형</span><select data-v="type"' + dis + ">" + types + "</select></label>" +
+      (V_ELEC.indexOf(t) >= 0 ? '<label class="vf sm' + mk("elec") + '"><span>전자</span><select data-v="elec"' + dis + ">" + opt({ 1: "여", 0: "부" }, v.elec) + "</select></label>" : "") + "</div>" +
+      '<div class="vh-r"><label class="vf' + mk("supply") + '"><span>공급가액</span><input data-v="supply" inputmode="numeric" autocomplete="off" value="' + esc(v.supply) + '"' + dis + "></label>" +
+      '<label class="vf' + mk("tax") + '"><span>부가세</span><input data-v="tax" inputmode="numeric" autocomplete="off" value="' + esc(v.tax) + '"' + dis + "></label></div>";
+    if (t === "54") h += '<div class="vh-r"><label class="vf wide' + mk("reason") + '"><span>불공제사유</span><select data-v="reason"' + dis + ">" + opt(REASON, v.reason) + "</select></label></div>";
+    if (V_ZR.indexOf(t) >= 0) h += '<div class="vh-r"><label class="vf wide' + mk("zr") + '"><span>영세율구분</span><select data-v="zr"' + dis + ">" + opt(ZR, v.zr) + "</select></label></div>";
+    return h + "</div>";
+  }
+  function vSummary(a) {
+    var s = vtName(a.type) + " · 공급가액 " + won(a.supply || 0) + " · 부가세 " + won(a.tax || 0);
+    if (a.elec === true || a.elec === false) s += " · 전자 " + (a.elec ? "여" : "부");
+    if (String(a.type) === "54" && a.reason) s += " · 불공제사유 " + REASON[a.reason];
+    if (V_ZR.indexOf(String(a.type)) >= 0 && a.zr) s += " · 영세율구분 " + ZR[a.zr];
+    return '<div class="vsum">' + esc(s) + "</div>";
+  }
   function agg(lines) {
     var m = {};
     (lines || []).forEach(function (l) { var a = normAcc(l[0]), v = num(l[1]); if (!a && !v) return; m[a] = (m[a] || 0) + v; });
@@ -194,7 +236,7 @@
     return ka.length === kb.length && ka.every(function (k) { return b.hasOwnProperty(k) && b[k] === a[k]; });
   }
   function hits(u, a) { return Object.keys(u).filter(function (k) { return a.hasOwnProperty(k) && a[k] === u[k]; }).length; }
-  function answersOf(q) { return [{ dr: q.dr, cr: q.cr }].concat(q.alt || []); }
+  function answersOf(q) { return [{ dr: q.dr, cr: q.cr, v: q.v }].concat((q.alt || []).map(function (a) { return { dr: a.dr, cr: a.cr, v: a.v || q.v }; })); }
   // 적요: 재고자산이 대변에서 판매 외 사유로 줄 때 "8. 타계정으로 대체액"
   var INV = ["제품", "상품", "원재료"];
   var JY = { 8: "8. 타계정으로 대체액" };
@@ -209,9 +251,10 @@
     var ud = agg(it.dr), uc = agg(it.cr), uj = jyMap(it.cr), best = null, bs = -1;
     answersOf(q).forEach(function (ans) {
       var ad = agg(ans.dr), ac = agg(ans.cr), aj = jyMap(ans.cr);
-      var ok = sameMap(ud, ad) && sameMap(uc, ac) && sameMap(uj, aj);
-      var sc = ok ? 1e9 : hits(ud, ad) + hits(uc, ac);
-      if (sc > bs) { bs = sc; best = { ok: ok, dr: ad, cr: ac, jy: aj }; }
+      var vc = ans.v ? vCheck(it.v || {}, ans.v) : null;
+      var ok = sameMap(ud, ad) && sameMap(uc, ac) && sameMap(uj, aj) && (!vc || vc.all);
+      var sc = ok ? 1e9 : hits(ud, ad) + hits(uc, ac) + (vc ? Object.keys(vc).filter(function (k) { return k !== "all" && vc[k]; }).length : 0);
+      if (sc > bs) { bs = sc; best = { ok: ok, dr: ad, cr: ac, jy: aj, vc: vc }; }
     });
     return best;
   }
@@ -238,7 +281,7 @@
       return '<div class="je-side"><div class="je-h"><b>' + label + "</b>" + (editable ? '<button class="addln" data-add="' + key + '">+ 줄 추가</button>' : "") + "</div>" + rows + "</div>";
     }
     var sd = sideSum(it.dr), sc = sideSum(it.cr);
-    return '<div class="je">' + side("dr", "차변") + side("cr", "대변") +
+    return '<div class="je">' + (q.v ? vHtml(q, it, g ? g.vc : null, editable) : "") + side("dr", "차변") + side("cr", "대변") +
       '<div class="je-sum' + (sd !== sc ? " off" : "") + '" id="je-sum"><span>차변 합계 <b>' + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span></div></div>";
   }
   function ansTable(dr, cr) {
@@ -253,7 +296,7 @@
   function jeFeedbackHtml(q, it) {
     var filled = jeFilled(it), ok = it.ok === true;
     var title = !filled ? "안 푼 문제예요 · 정답 분개는 아래와 같아요" : ok ? "정답이에요" : "정답과 달라요 · 정답 분개를 확인하세요";
-    return '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" + ansTable(q.dr, q.cr) +
+    return '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" + (q.v ? vSummary(q.v) : "") + ansTable(q.dr, q.cr) +
       (q.an ? '<div class="sub" style="margin:6px 2px">이렇게 입력해도 정답: ' + esc(q.an) + "</div>" : "") +
       (q.p ? '<div class="trap"><b>이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
       '<div class="exp">' + esc(q.e) + "</div>" +
@@ -310,6 +353,27 @@
         it[c[0]][c[1]][1] = f; saveSession(); updSum();
       });
     });
+    root.querySelectorAll("[data-v]").forEach(function (el) {
+      var k = el.getAttribute("data-v"), v = it.v; if (!v) return;
+      if (k === "supply" || k === "tax") {
+        el.addEventListener("input", function () {
+          var f = fmtAmt(el.value); if (f !== el.value) { el.value = f; try { el.setSelectionRange(f.length, f.length); } catch (e) {} }
+          v[k] = f;
+          if (k === "tax") v.te = true;
+          else if (!v.te && V_TAX10.indexOf(String(v.type)) >= 0) {
+            var n = num(f), t = root.querySelector('[data-v="tax"]');
+            v.tax = !isNaN(n) && n ? fmtAmt(String(Math.trunc(n / 10))) : "";
+            if (t) t.value = v.tax;
+          }
+          saveSession();
+        });
+      } else {
+        el.addEventListener("change", function () {
+          v[k] = el.value; saveSession();
+          if (k === "type") { if (!v.te) { var n = num(v.supply); v.tax = V_TAX10.indexOf(el.value) >= 0 && n ? fmtAmt(String(Math.trunc(n / 10))) : ""; } onGraded(true); }
+        });
+      }
+    });
     root.querySelectorAll("[data-jy]").forEach(function (sel) {
       var c = cell(sel.getAttribute("data-jy"));
       sel.addEventListener("change", function () { it[c[0]][c[1]][2] = +sel.value || 0; saveSession(); });
@@ -331,6 +395,15 @@
   // 채점 전 확인. 채점해도 되면 true
   function jePrecheck(it) {
     if (!jeFilled(it)) return confirm("아직 입력하지 않았어요. 정답을 볼까요?");
+    var v = it.v;
+    if (v) {
+      var t = String(v.type);
+      if (!t) { alert("매입매출 유형을 선택해 주세요."); return false; }
+      if (!num(v.supply) || isNaN(num(v.supply)) || isNaN(num(v.tax))) { alert("공급가액과 부가세를 숫자로 입력해 주세요."); return false; }
+      if (V_ELEC.indexOf(t) >= 0 && v.elec === "") { alert("전자 여부(여/부)를 선택해 주세요."); return false; }
+      if (t === "54" && !v.reason) { alert("불공제사유를 선택해 주세요."); return false; }
+      if (V_ZR.indexOf(t) >= 0 && !v.zr) { alert("영세율구분을 선택해 주세요."); return false; }
+    }
     var lines = [].concat(it.dr, it.cr), half = lines.filter(function (l) { var a = !!normAcc(l[0]), v = !!num(l[1]); return a !== v; });
     if (half.length) { alert("계정과목과 금액을 짝지어 모두 입력해 주세요."); return false; }
     if (lines.some(function (l) { return isNaN(num(l[1])); })) { alert("금액은 숫자로 입력해 주세요."); return false; }
@@ -377,12 +450,14 @@
   }
   // 분개: 일반전표 6 · 오류수정 2 · 결산 2 (모자라면 다른 문제로 채움), 같은 쌍둥이 그룹 중복 없음
   function pickJE() {
-    var spec = [["gen", 6], ["vat", 0], ["fix", 2], ["close", 2]], usedG = {}, got = [];
+    var hasVat = DATA.questions.some(function (q) { return q.k === "vat"; });
+    var spec = hasVat ? [["gen", 5], ["vat", 5], ["fix", 2], ["close", 3]] : [["gen", 6], ["vat", 0], ["fix", 2], ["close", 2]], usedG = {}, got = [];
+    var N = hasVat ? 15 : 10;
     function take(list, count) {
       shuffle(list).forEach(function (q) { if (count <= 0 || usedG[q.g] || got.indexOf(q) >= 0) return; got.push(q); usedG[q.g] = 1; count--; });
     }
     spec.forEach(function (s) { take(DATA.questions.filter(function (q) { return q.k === s[0]; }), s[1]); });
-    if (got.length < JE_N) take(DATA.questions, JE_N - got.length);
+    if (got.length < N) take(DATA.questions, N - got.length);
     var ord = Object.keys(KIND);
     got.sort(function (a, b) { return ord.indexOf(a.k) - ord.indexOf(b.k) || topicOrder(a) - topicOrder(b); });
     return got.map(function (q) { return q.id; });
@@ -469,8 +544,8 @@
       '<button data-area="je" class="' + (isJE() ? "on" : "") + '" aria-pressed="' + isJE() + '"' + (jeOk ? "" : " disabled") + ">분개" + (jeOk ? "" : " <small>준비 중</small>") + "</button></div>";
     var je = isJE();
     h += '<div class="label">풀이 방식</div>' +
-      '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">' + (je ? JE_N + "문항 · 다 입력하고 한 번에 채점" : "15문항 · 다 풀고 한 번에 채점") + "</div></button>" +
-      '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">' + (je ? JE_N + "문항 · 한 문제씩 입력하고 바로 채점" : "15문항 · 한 문제씩 바로 정답과 해설 확인") + "</div></button>" +
+      '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">' + (je ? jeN() + "문항 · 다 입력하고 한 번에 채점" : "15문항 · 다 풀고 한 번에 채점") + "</div></button>" +
+      '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">' + (je ? jeN() + "문항 · 한 문제씩 입력하고 바로 채점" : "15문항 · 한 문제씩 바로 정답과 해설 확인") + "</div></button>" +
       '<button class="card menu note" id="m-note"><span class="t">오답노트</span><span class="badge' + (nCount ? "" : " zero") + '">' + nCount + "</span></button>";
     h += noticeHtml();
     app.innerHTML = h;
