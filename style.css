@@ -177,6 +177,7 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .jy{flex-basis:100%;display:flex;justify-content:flex-end;padding:2px 38px 4px 0;font-size:.85em;color:var(--sub)}
 .jy select{font:inherit;font-size:.95em;margin-left:6px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-height:36px}
 .je-row.ng .jy select{border-color:var(--bad)}
+[hidden]{display:none!important}
 .jy-t{color:var(--brand);font-size:.85em}
 .x{flex:none;width:32px;height:44px;border:0;background:none;color:var(--sub);font-size:1.2em;cursor:pointer}
 .sug{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:8;background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.14);overflow:hidden}
