@@ -195,13 +195,23 @@
   }
   function hits(u, a) { return Object.keys(u).filter(function (k) { return a.hasOwnProperty(k) && a[k] === u[k]; }).length; }
   function answersOf(q) { return [{ dr: q.dr, cr: q.cr }].concat(q.alt || []); }
-  // 줄 순서·같은 계정 나눠 쓰기와 무관하게 계정별 합계로 비교. 다른 정답(alt)도 인정
+  // 적요: 재고자산이 대변에서 판매 외 사유로 줄 때 "8. 타계정으로 대체액"
+  var INV = ["제품", "상품", "원재료"];
+  var JY = { 8: "8. 타계정으로 대체액" };
+  function isInv(a) { return INV.indexOf(normAcc(a)) >= 0; }
+  function jyMap(lines) {
+    var m = {};
+    (lines || []).forEach(function (l) { var a = normAcc(l[0]); if (!isInv(a)) return; var c = +l[2] || 0; m[a] = Math.max(m[a] || 0, c); });
+    return m;
+  }
+  // 줄 순서·같은 계정 나눠 쓰기와 무관하게 계정별 합계로 비교. 다른 정답(alt)도 인정. 재고자산 대변 줄은 적요까지 비교
   function gradeJE(q, it) {
-    var ud = agg(it.dr), uc = agg(it.cr), best = null, bs = -1;
+    var ud = agg(it.dr), uc = agg(it.cr), uj = jyMap(it.cr), best = null, bs = -1;
     answersOf(q).forEach(function (ans) {
-      var ad = agg(ans.dr), ac = agg(ans.cr), ok = sameMap(ud, ad) && sameMap(uc, ac);
+      var ad = agg(ans.dr), ac = agg(ans.cr), aj = jyMap(ans.cr);
+      var ok = sameMap(ud, ad) && sameMap(uc, ac) && sameMap(uj, aj);
       var sc = ok ? 1e9 : hits(ud, ad) + hits(uc, ac);
-      if (sc > bs) { bs = sc; best = { ok: ok, dr: ad, cr: ac }; }
+      if (sc > bs) { bs = sc; best = { ok: ok, dr: ad, cr: ac, jy: aj }; }
     });
     return best;
   }
@@ -210,13 +220,20 @@
     jeInit(it);
     var g = locked ? gradeJE(q, it) : null;
     function side(key, label) {
-      var um = agg(it[key]);
+      var um = agg(it[key]), uj = jyMap(it[key]);
       var rows = it[key].map(function (l, i) {
-        var cls = "je-row";
-        if (g && (normAcc(l[0]) || num(l[1]))) { var a = normAcc(l[0]), am = g[key]; cls += am.hasOwnProperty(a) && am[a] === um[a] ? " ok" : " ng"; }
+        var cls = "je-row", a = normAcc(l[0]);
+        if (g && (a || num(l[1]))) {
+          var am = g[key], good = am.hasOwnProperty(a) && am[a] === um[a];
+          if (good && key === "cr" && isInv(a)) good = (g.jy[a] || 0) === (uj[a] || 0);
+          cls += good ? " ok" : " ng";
+        }
+        var jyOn = key === "cr" && isInv(a), code = +l[2] || 0;
+        var jy = key !== "cr" ? "" : '<div class="jy"' + (jyOn ? "" : " hidden") + '><label>적요 <select data-jy="' + key + ":" + i + '"' + (editable ? "" : " disabled") + '>' +
+          '<option value="">선택 안 함</option>' + Object.keys(JY).map(function (c) { return '<option value="' + c + '"' + (+c === code ? " selected" : "") + ">" + esc(JY[c]) + "</option>"; }).join("") + "</select></label></div>";
         return '<div class="' + cls + '"><div class="acc-w"><input class="acc" data-acc="' + key + ":" + i + '" value="' + esc(l[0]) + '" placeholder="계정과목" autocomplete="off" aria-label="' + label + " 계정과목 " + (i + 1) + '"' + (editable ? "" : " disabled") + '><div class="sug" hidden></div></div>' +
           '<input class="amt" data-amt="' + key + ":" + i + '" value="' + esc(l[1]) + '" placeholder="금액" inputmode="numeric" autocomplete="off" aria-label="' + label + " 금액 " + (i + 1) + '"' + (editable ? "" : " disabled") + ">" +
-          (editable ? '<button class="x" data-del="' + key + ":" + i + '" aria-label="줄 삭제">×</button>' : "") + "</div>";
+          (editable ? '<button class="x" data-del="' + key + ":" + i + '" aria-label="줄 삭제">×</button>' : "") + jy + "</div>";
       }).join("");
       return '<div class="je-side"><div class="je-h"><b>' + label + "</b>" + (editable ? '<button class="addln" data-add="' + key + '">+ 줄 추가</button>' : "") + "</div>" + rows + "</div>";
     }
@@ -228,7 +245,8 @@
     var n = Math.max(dr.length, cr.length), r = "";
     for (var i = 0; i < n; i++) {
       var d = dr[i], c = cr[i];
-      r += "<tr><td>" + (d ? esc(d[0]) + '</td><td class="num">' + won(d[1]) : '</td><td class="num">') + "</td><td>" + (c ? esc(c[0]) + '</td><td class="num">' + won(c[1]) : '</td><td class="num">') + "</td></tr>";
+      r += "<tr><td>" + (d ? esc(d[0]) + '</td><td class="num">' + won(d[1]) : '</td><td class="num">') + "</td><td>" +
+        (c ? esc(c[0]) + (c[2] && JY[c[2]] ? '<br><small class="jy-t">적요 ' + esc(JY[c[2]]) + "</small>" : "") + '</td><td class="num">' + won(c[1]) : '</td><td class="num">') + "</td></tr>";
     }
     return '<div class="tablewrap ans"><table><tr><th colspan="2">차변</th><th colspan="2">대변</th></tr>' + r + "</table></div>";
   }
@@ -269,13 +287,18 @@
         box.innerHTML = r.map(function (x) { return '<button type="button" data-pick="' + esc(x) + '">' + esc(x) + "</button>"; }).join("");
         box.hidden = false;
       }
-      inp.addEventListener("input", function () { it[c[0]][c[1]][0] = inp.value; saveSession(); show(); });
+      function jyToggle() {
+        var j = root.querySelector('[data-jy="' + c[0] + ":" + c[1] + '"]'); if (!j) return;
+        var on = isInv(inp.value); j.closest(".jy").hidden = !on;
+        if (!on && it[c[0]][c[1]][2]) { it[c[0]][c[1]][2] = 0; j.value = ""; }
+      }
+      inp.addEventListener("input", function () { it[c[0]][c[1]][0] = inp.value; jyToggle(); saveSession(); show(); });
       inp.addEventListener("focus", show);
       inp.addEventListener("blur", function () { setTimeout(function () { box.hidden = true; }, 150); });
       box.addEventListener("mousedown", function (e) { e.preventDefault(); });
       box.addEventListener("click", function (e) {
         var b = e.target.closest ? e.target.closest("[data-pick]") : null; if (!b) return;
-        inp.value = b.getAttribute("data-pick"); it[c[0]][c[1]][0] = inp.value; saveSession(); box.hidden = true;
+        inp.value = b.getAttribute("data-pick"); it[c[0]][c[1]][0] = inp.value; jyToggle(); saveSession(); box.hidden = true;
         var amt = root.querySelector('[data-amt="' + c[0] + ":" + c[1] + '"]'); if (amt) amt.focus();
       });
     });
@@ -286,6 +309,10 @@
         if (f !== inp.value) { inp.value = f; try { inp.setSelectionRange(f.length, f.length); } catch (e) {} }
         it[c[0]][c[1]][1] = f; saveSession(); updSum();
       });
+    });
+    root.querySelectorAll("[data-jy]").forEach(function (sel) {
+      var c = cell(sel.getAttribute("data-jy"));
+      sel.addEventListener("change", function () { it[c[0]][c[1]][2] = +sel.value || 0; saveSession(); });
     });
     root.querySelectorAll("[data-del]").forEach(function (b) {
       b.onclick = function () {
