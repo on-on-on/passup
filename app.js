@@ -182,8 +182,7 @@
     var d = dday(), last = sget("localStorage", "passup.last"), cur = S.session && !S.session.submitted ? S.session : null;
     var h = '<div class="top">' + logoHtml() + '<button class="iconbtn" id="fs" aria-label="글자 크기">가' + (document.documentElement.classList.contains("big") ? "-" : "+") + "</button></div>" +
       '<div class="sub" style="margin:-8px 0 12px">' + esc(DATA.subject) + " 이론</div>" +
-      '<div class="stats"><div class="card"><div class="sub">다음 시험</div><div class="big-num">' + esc(d.label) + '</div><div class="sub">' + esc(d.sub) + "</div></div>" +
-      '<div class="card"><div class="sub">문제은행</div><div class="big-num">' + DATA.questions.length + '</div><div class="sub">변형 문항</div></div></div>';
+      '<div class="card"><div class="sub">다음 시험</div><div class="big-num">' + esc(d.label) + '</div><div class="sub">' + esc(d.sub) + "</div></div>";
     if (cur) h += '<button class="card menu hero" id="resume"><div class="sub">풀던 문제가 있어요</div><div class="t">' + esc(cur.title) + " 이어서 풀기</div></button>";
     h += '<button class="card menu" id="m-exam"><div class="t">실전 모의고사</div><div class="sub">15문항 · 시험과 같은 번호 구성</div></button>' +
       '<button class="card menu" id="m-topic"><div class="t">주제별 연습</div><div class="sub">' + DATA.topics.length + "개 주제 중 골라서</div></button>" +
