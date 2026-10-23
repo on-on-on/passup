@@ -131,4 +131,15 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .bub.on{background:var(--brand);opacity:1}
 .bub.on.right{background:var(--ok);border-color:var(--ok)}
 .bub.on.bad{background:var(--bad);border-color:var(--bad)}
+.q-meta{align-items:center}
+.rep{border:0;background:none;color:var(--sub);font-size:.95em;padding:8px 0 8px 12px;min-height:36px;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.rep.done{text-decoration:none;opacity:.7}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--bg);color:var(--fg);width:100%;max-width:560px;border-radius:20px 20px 0 0;padding:18px 16px calc(16px + env(safe-area-inset-bottom));font-family:var(--font);font-size:var(--fs)}
+.sheet-h{display:flex;justify-content:space-between;align-items:baseline}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chips button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:9px 14px;font-size:.92em;cursor:pointer;min-height:40px}
+.chips button.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+.sheet textarea{width:100%;font:inherit;font-size:.95em;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--fg);resize:vertical}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));background:var(--fg);color:var(--bg);padding:12px 18px;border-radius:999px;font-size:.92em;z-index:30;font-family:var(--font);max-width:calc(100% - 32px);text-align:center}
 .notice{background:var(--card);border-radius:12px;padding:10px 12px;font-size:.85em;color:var(--sub);margin:12px 0}

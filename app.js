@@ -74,10 +74,60 @@
     return { label: n === 0 ? "D-Day" : "D-" + n, sub: "제" + list[0].round + "회 · " + (list[0].d.getMonth() + 1) + "." + list[0].d.getDate() };
   }
   function bar(html) { return '<div class="bar"><div class="in">' + html + "</div></div>"; }
-  function reportLink(q) {
-    if (!CFG.reportFormUrl) return "";
-    var url = CFG.reportFormUrl.replace("{id}", encodeURIComponent(q.id)).replace("{subject}", encodeURIComponent(DATA.subject));
-    return '<a class="link" href="' + esc(url) + '" target="_blank" rel="noopener">이 문제 오류 신고</a>';
+  // ---------- 오류 신고(사이트 안에서 바로 접수) ----------
+  function formUrl(q) {
+    return (CFG.reportFormUrl || "").replace("{id}", encodeURIComponent(q.id)).replace("{subject}", encodeURIComponent(DATA.subject));
+  }
+  function reported() { var r = sget("localStorage", "passup.reported"); return r && typeof r === "object" ? r : {}; }
+  function reportBtn(q) {
+    if (!CFG.reportPost && !CFG.reportFormUrl) return "";
+    var done = reported()[q.id];
+    return '<button class="rep' + (done ? " done" : "") + '" data-rep="' + esc(q.id) + '">' + (done ? "신고함" : "오류 신고") + "</button>";
+  }
+  function bindReports() {
+    app.querySelectorAll("[data-rep]").forEach(function (b) { b.onclick = function () { openReport(BY_ID[b.getAttribute("data-rep")]); }; });
+  }
+  function toast(msg) {
+    var t = document.createElement("div"); t.className = "toast"; t.setAttribute("role", "status"); t.textContent = msg;
+    document.body.appendChild(t); setTimeout(function () { t.remove(); }, 2600);
+  }
+  function openReport(q) {
+    var P = CFG.reportPost;
+    if (!P) { window.open(formUrl(q), "_blank", "noopener"); return; }
+    var old = document.getElementById("rep-bg"); if (old) old.remove();
+    var bg = document.createElement("div"); bg.id = "rep-bg"; bg.className = "sheet-bg";
+    bg.innerHTML = '<div class="sheet" role="dialog" aria-label="오류 신고"><div class="sheet-h"><b>이 문제 오류 신고</b><span class="sub">' + esc(q.id) + "</span></div>" +
+      '<div class="sub" style="margin:2px 0 10px">어떤 오류인가요?</div><div class="chips">' +
+      P.types.map(function (t, i) { return '<button data-ty="' + i + '">' + esc(t) + "</button>"; }).join("") + "</div>" +
+      '<textarea id="rep-memo" rows="3" maxlength="500" placeholder="자세한 내용 (선택)"></textarea>' +
+      '<div class="navrow" style="margin:12px 0 0"><button class="btn" id="rep-x">취소</button><button class="btn primary" id="rep-send" disabled>보내기</button></div></div>';
+    document.body.appendChild(bg);
+    var picked = -1, send = document.getElementById("rep-send");
+    function close() { bg.remove(); }
+    bg.onclick = function (e) { if (e.target === bg) close(); };
+    document.getElementById("rep-x").onclick = close;
+    bg.querySelectorAll("[data-ty]").forEach(function (b) {
+      b.onclick = function () {
+        picked = +b.getAttribute("data-ty");
+        bg.querySelectorAll("[data-ty]").forEach(function (x) { x.classList.toggle("on", x === b); });
+        send.disabled = false;
+      };
+    });
+    send.onclick = function () {
+      if (picked < 0) return;
+      send.disabled = true; send.textContent = "보내는 중…";
+      var body = new URLSearchParams();
+      body.append(P.id, q.id); body.append(P.subject, DATA.subject); body.append(P.type, P.types[picked]);
+      var memo = document.getElementById("rep-memo").value.trim(); if (memo) body.append(P.memo, memo);
+      fetch(P.action, { method: "POST", mode: "no-cors", body: body }).then(function () {
+        var r = reported(); r[q.id] = Date.now(); sset("localStorage", "passup.reported", r);
+        close(); toast("신고가 접수됐어요. 확인 후 고칠게요.");
+        app.querySelectorAll('[data-rep="' + q.id + '"]').forEach(function (b) { b.classList.add("done"); b.textContent = "신고함"; });
+      }).catch(function () {
+        send.disabled = false; send.textContent = "다시 보내기";
+        toast("보내지 못했어요. 인터넷 연결을 확인해 주세요.");
+      });
+    };
   }
 
   // ---------- 자료(표/텍스트) ----------
@@ -265,7 +315,7 @@
     var h = '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" +
       (q.p ? '<div class="trap"><b>이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
       '<div class="exp">' + esc(q.e) + "</div>" +
-      '<div class="meta">' + esc(topicName(q.t)) + " · " + esc(q.id) + "</div>" + reportLink(q) + "</div>";
+      '<div class="meta">' + esc(topicName(q.t)) + " · " + esc(q.id) + "</div></div>";
     return h;
   }
   function calcHtml() {
@@ -325,7 +375,7 @@
     var reveal = !exam && !!it.sel, last = s.idx === n - 1;
     var h = '<div class="q-top"><button class="iconbtn" id="quit" aria-label="처음으로">처음</button><b>' + esc(s.title) + "</b>" +
       '<span class="cnt">' + (exam ? '<span id="timer">' + mmss(s.elapsed) + "</span>" : (s.idx + 1) + " / " + n) + "</span></div>";
-    h += '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span><span class=\"sub\">" + (s.idx + 1) + " / " + n + "</span></div>";
+    h += '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span>" + reportBtn(q) + "</div>";
     h += '<div class="question"><span class="qno">' + (s.idx + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, reveal);
     if (reveal) h += feedbackHtml(q, it);
     var nextLabel = last ? (exam ? "제출" : "결과 보기") : "다음";
@@ -334,6 +384,7 @@
       '<button class="btn primary" id="next">' + nextLabel + "</button></div>";
     h += omrHtml(s);
     app.innerHTML = h + calcHtml();
+    bindReports();
 
     function goIdx(i) { s.idx = i; saveSession(); renderQuiz(); window.scrollTo(0, 0); }
     function answer(item, c) {
@@ -423,8 +474,10 @@
     var s = S.session; if (!s) { go("home", false); return; }
     var i = S.reviewIdx || 0, it = s.items[i], q = BY_ID[it.id], n = s.items.length;
     var h = '<div class="q-head"><button class="iconbtn" id="back" style="margin-left:-10px">‹ 결과</button><span>' + (i + 1) + " / " + n + "</span></div>" +
+      '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span>" + reportBtn(q) + "</div>" +
       '<div class="question"><span class="qno">' + (i + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, true) + feedbackHtml(q, it);
     app.innerHTML = h + bar('<button class="btn small" id="p"' + (i === 0 ? " disabled" : "") + ' aria-label="이전">‹</button><button class="btn primary" id="nx">' + (i === n - 1 ? "결과로" : "다음 문항") + "</button>");
+    bindReports();
     bind("back", function () { history.back(); });
     bind("p", function () { S.reviewIdx = i - 1; renderReview(); window.scrollTo(0, 0); });
     bind("nx", function () { if (i === n - 1) history.back(); else { S.reviewIdx = i + 1; renderReview(); window.scrollTo(0, 0); } });
