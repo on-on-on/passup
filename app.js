@@ -8,7 +8,7 @@
   var AREAS = ["재무회계", "원가회계", "부가가치세", "소득세"];
   var SUBJ = {
     // je: 분개 문제 파일(없으면 null → "준비 중")
-    k1: { name: "전산회계 1급", file: "data/k1.json", je: null },  // 분개 문제 완성 후 "data/k1_je.json"
+    k1: { name: "전산회계 1급", file: "data/k1.json", je: "data/k1_je.json" },
     t2: { name: "전산세무 2급", file: "data/t2.json", je: null }
   };
   var KIND = { gen: "일반전표", vat: "매입매출", fix: "오류수정", close: "결산" };
