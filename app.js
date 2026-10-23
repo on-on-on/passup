@@ -7,12 +7,19 @@
   var CIRC = ["①", "②", "③", "④"];
   var AREAS = ["재무회계", "원가회계", "부가가치세", "소득세"];
   var SUBJ = {
-    k1: { name: "전산회계 1급", file: "data/k1.json" },
-    t2: { name: "전산세무 2급", file: "data/t2.json" }
+    // je: 분개 문제 파일(없으면 null → "준비 중")
+    k1: { name: "전산회계 1급", file: "data/k1.json", je: null },  // 분개 문제 완성 후 "data/k1_je.json"
+    t2: { name: "전산세무 2급", file: "data/t2.json", je: null }
   };
+  var KIND = { gen: "일반전표", vat: "매입매출", fix: "오류수정", close: "결산" };
+  var JE_N = 10;
   S.subj = (function () { var v = sget0("passup.subj"); return SUBJ[v] ? v : "k1"; })();
+  S.areaPref = sget0("passup.area") === "je" ? "je" : "th";
+  S.area = S.areaPref === "je" && SUBJ[S.subj].je ? "je" : "th";
   function sget0(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
-  function sfx(base) { return S.subj === "k1" ? base : base + "." + S.subj; }
+  function isJE() { return S.area === "je"; }
+  // 저장 키: 이론은 예전 그대로, 분개는 종목 뒤에 .je
+  function sfx(base) { return isJE() ? base + "." + S.subj + ".je" : S.subj === "k1" ? base : base + "." + S.subj; }
   var AREA_SHORT = { "재무회계": "재무회계", "원가회계": "원가회계", "부가가치세": "부가세", "소득세": "소득세" };
   var MAX_NOTE_SET = 15;
 
@@ -24,7 +31,10 @@
   // ---------- 유틸 ----------
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
-  function areaOf(q) { return TOPIC[q.t] ? TOPIC[q.t].area : ""; }
+  function areaOf(q) { if (q.k) return KIND[q.k] || ""; return TOPIC[q.t] ? TOPIC[q.t].area : ""; }
+  function areasList() { return (DATA && DATA.areas) || AREAS; }
+  function answered(x) { return isJE() ? jeFilled(x) : !!x.sel; }
+  function isRight(x) { return isJE() ? x.ok === true : x.sel === BY_ID[x.id].a; }
   function topicName(code) { return TOPIC[code] ? TOPIC[code].name : code; }
   function mmss(sec) { sec = Math.max(0, Math.floor(sec)); var m = Math.floor(sec / 60), s = sec % 60; return m + ":" + (s < 10 ? "0" : "") + s; }
   function today() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
@@ -160,6 +170,150 @@
     return out;
   }
 
+  // ---------- 분개 입력·채점 ----------
+  function normAcc(a) { return String(a == null ? "" : a).replace(/\s+/g, ""); }
+  function num(v) {
+    var s = String(v == null ? "" : v).replace(/[,\s원]/g, "").replace(/[−–]/g, "-");
+    if (!s || s === "-") return 0;
+    return /^-?\d+$/.test(s) ? Number(s) : NaN;
+  }
+  function won(n) { return (n < 0 ? "-" : "") + Math.abs(n).toLocaleString("ko-KR"); }
+  function fmtAmt(s) {
+    var neg = /^\s*[-−]/.test(s), d = String(s).replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+    return (neg ? "-" : "") + (d ? Number(d).toLocaleString("ko-KR") : "");
+  }
+  function jeInit(it) { if (!it.dr) it.dr = [["", ""]]; if (!it.cr) it.cr = [["", ""]]; }
+  function jeFilled(it) { return [].concat(it.dr || [], it.cr || []).some(function (l) { return normAcc(l[0]) || num(l[1]); }); }
+  function agg(lines) {
+    var m = {};
+    (lines || []).forEach(function (l) { var a = normAcc(l[0]), v = num(l[1]); if (!a && !v) return; m[a] = (m[a] || 0) + v; });
+    return m;
+  }
+  function sameMap(a, b) {
+    var ka = Object.keys(a), kb = Object.keys(b);
+    return ka.length === kb.length && ka.every(function (k) { return b.hasOwnProperty(k) && b[k] === a[k]; });
+  }
+  function hits(u, a) { return Object.keys(u).filter(function (k) { return a.hasOwnProperty(k) && a[k] === u[k]; }).length; }
+  function answersOf(q) { return [{ dr: q.dr, cr: q.cr }].concat(q.alt || []); }
+  // 줄 순서·같은 계정 나눠 쓰기와 무관하게 계정별 합계로 비교. 다른 정답(alt)도 인정
+  function gradeJE(q, it) {
+    var ud = agg(it.dr), uc = agg(it.cr), best = null, bs = -1;
+    answersOf(q).forEach(function (ans) {
+      var ad = agg(ans.dr), ac = agg(ans.cr), ok = sameMap(ud, ad) && sameMap(uc, ac);
+      var sc = ok ? 1e9 : hits(ud, ad) + hits(uc, ac);
+      if (sc > bs) { bs = sc; best = { ok: ok, dr: ad, cr: ac }; }
+    });
+    return best;
+  }
+  function sideSum(lines) { return (lines || []).reduce(function (t, l) { var v = num(l[1]); return t + (isNaN(v) ? 0 : v); }, 0); }
+  function jeHtml(q, it, locked, editable) {
+    jeInit(it);
+    var g = locked ? gradeJE(q, it) : null;
+    function side(key, label) {
+      var um = agg(it[key]);
+      var rows = it[key].map(function (l, i) {
+        var cls = "je-row";
+        if (g && (normAcc(l[0]) || num(l[1]))) { var a = normAcc(l[0]), am = g[key]; cls += am.hasOwnProperty(a) && am[a] === um[a] ? " ok" : " ng"; }
+        return '<div class="' + cls + '"><div class="acc-w"><input class="acc" data-acc="' + key + ":" + i + '" value="' + esc(l[0]) + '" placeholder="계정과목" autocomplete="off" aria-label="' + label + " 계정과목 " + (i + 1) + '"' + (editable ? "" : " disabled") + '><div class="sug" hidden></div></div>' +
+          '<input class="amt" data-amt="' + key + ":" + i + '" value="' + esc(l[1]) + '" placeholder="금액" inputmode="numeric" autocomplete="off" aria-label="' + label + " 금액 " + (i + 1) + '"' + (editable ? "" : " disabled") + ">" +
+          (editable ? '<button class="x" data-del="' + key + ":" + i + '" aria-label="줄 삭제">×</button>' : "") + "</div>";
+      }).join("");
+      return '<div class="je-side"><div class="je-h"><b>' + label + "</b>" + (editable ? '<button class="addln" data-add="' + key + '">+ 줄 추가</button>' : "") + "</div>" + rows + "</div>";
+    }
+    var sd = sideSum(it.dr), sc = sideSum(it.cr);
+    return '<div class="je">' + side("dr", "차변") + side("cr", "대변") +
+      '<div class="je-sum' + (sd !== sc ? " off" : "") + '" id="je-sum"><span>차변 합계 <b>' + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span></div></div>";
+  }
+  function ansTable(dr, cr) {
+    var n = Math.max(dr.length, cr.length), r = "";
+    for (var i = 0; i < n; i++) {
+      var d = dr[i], c = cr[i];
+      r += "<tr><td>" + (d ? esc(d[0]) + '</td><td class="num">' + won(d[1]) : '</td><td class="num">') + "</td><td>" + (c ? esc(c[0]) + '</td><td class="num">' + won(c[1]) : '</td><td class="num">') + "</td></tr>";
+    }
+    return '<div class="tablewrap ans"><table><tr><th colspan="2">차변</th><th colspan="2">대변</th></tr>' + r + "</table></div>";
+  }
+  function jeFeedbackHtml(q, it) {
+    var filled = jeFilled(it), ok = it.ok === true;
+    var title = !filled ? "안 푼 문제예요 · 정답 분개는 아래와 같아요" : ok ? "정답이에요" : "정답과 달라요 · 정답 분개를 확인하세요";
+    return '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" + ansTable(q.dr, q.cr) +
+      (q.an ? '<div class="sub" style="margin:6px 2px">이렇게 입력해도 정답: ' + esc(q.an) + "</div>" : "") +
+      (q.p ? '<div class="trap"><b>이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
+      '<div class="exp">' + esc(q.e) + "</div>" +
+      '<div class="meta">' + esc(topicName(q.t)) + " · " + esc(q.id) + "</div></div>";
+  }
+  // 계정과목 찾기: 글자 일부 또는 초성(ㅂㅌㅇㄱ)
+  var CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+  function cho(s) { return String(s).replace(/[가-힣]/g, function (c) { return CHO[Math.floor((c.charCodeAt(0) - 44032) / 588)]; }); }
+  function findAcc(qs) {
+    var q = normAcc(qs); if (!q) return [];
+    var list = (DATA && DATA.accounts) || [], isCho = /^[ㄱ-ㅎ]+$/.test(q);
+    var a = list.filter(function (x) { var n = normAcc(x); return n.indexOf(q) === 0 || (isCho && cho(n).indexOf(q) === 0); });
+    var b = list.filter(function (x) { var n = normAcc(x); return a.indexOf(x) < 0 && (n.indexOf(q) > 0 || (isCho && cho(n).indexOf(q) > 0)); });
+    return a.concat(b).slice(0, 8);
+  }
+  function bindJE(it, onGraded) {
+    var root = app.querySelector(".je"); if (!root) return;
+    function cell(attr) { var p = attr.split(":"); return [p[0], +p[1]]; }
+    function updSum() {
+      var el = document.getElementById("je-sum"); if (!el) return;
+      var sd = sideSum(it.dr), sc = sideSum(it.cr);
+      el.className = "je-sum" + (sd !== sc ? " off" : "");
+      el.innerHTML = "<span>차변 합계 <b>" + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span>";
+    }
+    function rerenderFocus(sel) { onGraded(true); var f = app.querySelector(sel); if (f) f.focus(); }
+    root.querySelectorAll("[data-acc]").forEach(function (inp) {
+      var c = cell(inp.getAttribute("data-acc")), box = inp.nextElementSibling;
+      function show() {
+        var r = findAcc(inp.value);
+        if (!r.length || (r.length === 1 && normAcc(r[0]) === normAcc(inp.value))) { box.hidden = true; return; }
+        box.innerHTML = r.map(function (x) { return '<button type="button" data-pick="' + esc(x) + '">' + esc(x) + "</button>"; }).join("");
+        box.hidden = false;
+      }
+      inp.addEventListener("input", function () { it[c[0]][c[1]][0] = inp.value; saveSession(); show(); });
+      inp.addEventListener("focus", show);
+      inp.addEventListener("blur", function () { setTimeout(function () { box.hidden = true; }, 150); });
+      box.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      box.addEventListener("click", function (e) {
+        var b = e.target.closest ? e.target.closest("[data-pick]") : null; if (!b) return;
+        inp.value = b.getAttribute("data-pick"); it[c[0]][c[1]][0] = inp.value; saveSession(); box.hidden = true;
+        var amt = root.querySelector('[data-amt="' + c[0] + ":" + c[1] + '"]'); if (amt) amt.focus();
+      });
+    });
+    root.querySelectorAll("[data-amt]").forEach(function (inp) {
+      var c = cell(inp.getAttribute("data-amt"));
+      inp.addEventListener("input", function () {
+        var f = fmtAmt(inp.value);
+        if (f !== inp.value) { inp.value = f; try { inp.setSelectionRange(f.length, f.length); } catch (e) {} }
+        it[c[0]][c[1]][1] = f; saveSession(); updSum();
+      });
+    });
+    root.querySelectorAll("[data-del]").forEach(function (b) {
+      b.onclick = function () {
+        var c = cell(b.getAttribute("data-del"));
+        it[c[0]].splice(c[1], 1); if (!it[c[0]].length) it[c[0]].push(["", ""]);
+        saveSession(); onGraded(true);
+      };
+    });
+    root.querySelectorAll("[data-add]").forEach(function (b) {
+      b.onclick = function () {
+        var k = b.getAttribute("data-add"); if (it[k].length >= 6) return;
+        it[k].push(["", ""]); saveSession(); rerenderFocus('[data-acc="' + k + ":" + (it[k].length - 1) + '"]');
+      };
+    });
+  }
+  // 채점 전 확인. 채점해도 되면 true
+  function jePrecheck(it) {
+    if (!jeFilled(it)) return confirm("아직 입력하지 않았어요. 정답을 볼까요?");
+    var lines = [].concat(it.dr, it.cr), half = lines.filter(function (l) { var a = !!normAcc(l[0]), v = !!num(l[1]); return a !== v; });
+    if (half.length) { alert("계정과목과 금액을 짝지어 모두 입력해 주세요."); return false; }
+    if (lines.some(function (l) { return isNaN(num(l[1])); })) { alert("금액은 숫자로 입력해 주세요."); return false; }
+    var acc = (DATA.accounts || []).map(normAcc), unk = lines.map(function (l) { return normAcc(l[0]); }).filter(function (a) { return a && acc.indexOf(a) < 0; });
+    if (unk.length && !confirm("목록에 없는 계정과목이 있어요: " + unk.join(", ") + "\n그래도 채점할까요?")) return false;
+    if (sideSum(it.dr) !== sideSum(it.cr) && !confirm("차변 합계와 대변 합계가 달라요. 그래도 채점할까요?")) return false;
+    return true;
+  }
+  function gradeItem(x) { var q = BY_ID[x.id]; x.graded = true; x.ok = jeFilled(x) && gradeJE(q, x).ok; }
+
   // ---------- 세션 ----------
   // mode: exam(시험 모드) | practice(연습 모드) | note(오답노트 풀이)
   function saveSession() { if (S.session) sset("sessionStorage", sfx("passup.session"), S.session); else sdel("sessionStorage", sfx("passup.session")); }
@@ -194,6 +348,19 @@
     });
     return ids;
   }
+  // 분개: 일반전표 6 · 오류수정 2 · 결산 2 (모자라면 다른 문제로 채움), 같은 쌍둥이 그룹 중복 없음
+  function pickJE() {
+    var spec = [["gen", 6], ["vat", 0], ["fix", 2], ["close", 2]], usedG = {}, got = [];
+    function take(list, count) {
+      shuffle(list).forEach(function (q) { if (count <= 0 || usedG[q.g] || got.indexOf(q) >= 0) return; got.push(q); usedG[q.g] = 1; count--; });
+    }
+    spec.forEach(function (s) { take(DATA.questions.filter(function (q) { return q.k === s[0]; }), s[1]); });
+    if (got.length < JE_N) take(DATA.questions, JE_N - got.length);
+    var ord = Object.keys(KIND);
+    got.sort(function (a, b) { return ord.indexOf(a.k) - ord.indexOf(b.k) || topicOrder(a) - topicOrder(b); });
+    return got.map(function (q) { return q.id; });
+  }
+  function pickSet() { return isJE() ? pickJE() : pickExam(); }
   function twinOf(id, used) {
     var q = BY_ID[id], group = BY_GROUP[q.g] || [];
     var fresh = shuffle(group.filter(function (x) { return x.id !== id && used.indexOf(x.id) < 0; }));
@@ -209,14 +376,15 @@
       if (similar) { var t = twinOf(id, used); if (t) { nid = t.id; used.push(nid); } }
       out.push({ id: nid, src: id });
     });
-    out.sort(function (a, b) { return topicOrder(BY_ID[a.id]) - topicOrder(BY_ID[b.id]); });
+    var ord = Object.keys(KIND);
+    out.sort(function (a, b) { var x = BY_ID[a.id], y = BY_ID[b.id]; return (x.k ? ord.indexOf(x.k) - ord.indexOf(y.k) : 0) || topicOrder(x) - topicOrder(y); });
     return out;
   }
   function startNote(similar) {
     var w = notes();
     var ids = noteIds().sort(function (a, b) { return w[a].at - w[b].at; }).slice(0, MAX_NOTE_SET);
     if (!ids.length) return;
-    newSession("note", similar ? "오답노트 · 비슷한 문제" : "오답노트 · 다시 풀기", noteSet(ids, similar));
+    newSession("note", (isJE() ? "분개 " : "") + (similar ? "오답노트 · 비슷한 문제" : "오답노트 · 다시 풀기"), noteSet(ids, similar));
   }
   function confirmNew() {
     var cur = S.session && !S.session.submitted ? S.session : null;
@@ -268,29 +436,43 @@
     if (cur) h += '<button class="card menu hero" id="resume"><div class="sub">풀던 문제가 있어요</div><div class="t">' + esc(cur.title) + " 이어서 풀기</div></button>";
     h += '<div class="label">종목</div><div class="seg">' +
       Object.keys(SUBJ).map(function (k) { return '<button data-subj="' + k + '" class="' + (k === S.subj ? "on" : "") + '" aria-pressed="' + (k === S.subj) + '">' + esc(SUBJ[k].name) + "</button>"; }).join("") + "</div>";
+    var jeOk = !!SUBJ[S.subj].je;
+    h += '<div class="label">영역</div><div class="seg">' +
+      '<button data-area="th" class="' + (!isJE() ? "on" : "") + '" aria-pressed="' + !isJE() + '">이론</button>' +
+      '<button data-area="je" class="' + (isJE() ? "on" : "") + '" aria-pressed="' + isJE() + '"' + (jeOk ? "" : " disabled") + ">분개" + (jeOk ? "" : " <small>준비 중</small>") + "</button></div>";
+    var je = isJE();
     h += '<div class="label">풀이 방식</div>' +
-      '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">15문항 · 다 풀고 한 번에 채점</div></button>' +
-      '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">15문항 · 한 문제씩 바로 정답과 해설 확인</div></button>' +
+      '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">' + (je ? JE_N + "문항 · 다 입력하고 한 번에 채점" : "15문항 · 다 풀고 한 번에 채점") + "</div></button>" +
+      '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">' + (je ? JE_N + "문항 · 한 문제씩 입력하고 바로 채점" : "15문항 · 한 문제씩 바로 정답과 해설 확인") + "</div></button>" +
       '<button class="card menu note" id="m-note"><span class="t">오답노트</span><span class="badge' + (nCount ? "" : " zero") + '">' + nCount + "</span></button>";
     h += noticeHtml();
     app.innerHTML = h;
     bind("fs", function () { var on = document.documentElement.classList.toggle("big"); sset("localStorage", "passup.big", on); renderHome(); });
     bind("resume", function () { go("quiz"); });
-    bind("m-exam", function () { if (confirmNew()) newSession("exam", "시험 모드", pickExam()); });
-    bind("m-prac", function () { if (confirmNew()) newSession("practice", "연습 모드", pickExam()); });
+    var pre = je ? "분개 · " : "";
+    bind("m-exam", function () { if (confirmNew()) newSession("exam", pre + "시험 모드", pickSet()); });
+    bind("m-prac", function () { if (confirmNew()) newSession("practice", pre + "연습 모드", pickSet()); });
     bind("m-note", function () { go("note"); });
     app.querySelectorAll("[data-subj]").forEach(function (b) {
       b.onclick = function () {
         var k = b.getAttribute("data-subj"); if (k === S.subj) return;
         b.classList.add("busy");
-        loadSubject(k, function () { sset("localStorage", "passup.subj", k); restoreSession(); renderHome(); });
+        var ar = S.areaPref === "je" && SUBJ[k].je ? "je" : "th";
+        loadSubject(k, ar, function () { sset("localStorage", "passup.subj", k); restoreSession(); renderHome(); });
+      };
+    });
+    app.querySelectorAll("[data-area]").forEach(function (b) {
+      b.onclick = function () {
+        var ar = b.getAttribute("data-area"); if (ar === S.area || b.disabled) return;
+        b.classList.add("busy");
+        loadSubject(S.subj, ar, function () { S.areaPref = ar; sset("localStorage", "passup.area", ar); restoreSession(); renderHome(); });
       };
     });
   }
 
   function renderNote() {
     var ids = noteIds(), n = ids.length;
-    var h = '<div class="top"><button class="iconbtn" id="back" aria-label="처음으로" style="margin-left:-10px">‹ 처음</button><div></div></div><h1>오답노트</h1>' +
+    var h = '<div class="top"><button class="iconbtn" id="back" aria-label="처음으로" style="margin-left:-10px">‹ 처음</button><div></div></div><h1>' + (isJE() ? "분개 " : "") + "오답노트</h1>" +
       '<p class="sub" style="margin-top:-6px">틀린 문제가 자동으로 모여요. 오답노트에서 다시 풀어 맞히면 빠져요.</p>';
     if (!n) {
       h += '<div class="card center" style="padding:28px 16px"><div class="t" style="font-weight:700">아직 틀린 문제가 없어요</div><div class="sub">시험 모드나 연습 모드에서 틀린 문제가 여기에 모여요.</div></div>';
@@ -301,7 +483,7 @@
         '<button class="card menu mode" id="w-sim"><div class="t">비슷한 문제로 풀기</div><div class="sub">같은 개념, 숫자·보기가 다른 문제로</div></button>';
       var by = {};
       ids.forEach(function (id) { var q = BY_ID[id], a = areaOf(q); (by[a] = by[a] || {})[q.t] = (by[a][q.t] || 0) + 1; });
-      AREAS.forEach(function (a) {
+      areasList().forEach(function (a) {
         if (!by[a]) return;
         h += '<div class="area-title">' + a + '</div><div class="card" style="padding:4px 16px">' + Object.keys(by[a]).sort(function (x, y) { return topicOrder({ t: x }) - topicOrder({ t: y }); }).map(function (t) {
           return '<div class="row"><span>' + esc(topicName(t)) + '</span><span class="pill">' + by[a][t] + "문항</span></div>";
@@ -359,9 +541,9 @@
 
   // OMR 답안지: 영역별 줄, 한 줄 최대 8문항
   function omrHtml(s) {
-    var exam = s.mode === "exam", groups = [], marked = 0;
+    var exam = s.mode === "exam", groups = [], marked = 0, je = isJE();
     s.items.forEach(function (x, i) {
-      if (x.sel) marked++;
+      if (answered(x)) marked++;
       var a = areaOf(BY_ID[x.id]), g = groups[groups.length - 1];
       if (!g || g.area !== a) { g = { area: a, idxs: [] }; groups.push(g); }
       g.idxs.push(i);
@@ -373,6 +555,10 @@
           g.idxs.slice(k, k + 8).map(function (i) {
             var x = s.items[i], q = BY_ID[x.id], reveal = !exam && x.sel, cls = "omr-cell";
             if (i === s.idx) cls += " cur";
+            if (je) {
+              var st = !exam && x.graded ? (x.ok ? " right" : " bad") : jeFilled(x) ? " on" : "";
+              return '<div class="' + cls + '" data-g="' + i + '" role="button" aria-label="' + (i + 1) + "번" + (jeFilled(x) ? " 입력함" : "") + '"><span class="omr-n">' + (i + 1) + '</span><span class="jef' + st + '" aria-hidden="true"></span></div>';
+            }
             if (reveal) cls += x.sel === q.a ? " ok" : " ng";
             var b = "";
             for (var c = 1; c <= 4; c++) {
@@ -384,18 +570,25 @@
           }).join("") + "</div>";
       }
     });
-    return '<div class="omr"><div class="omr-h"><b>답안지</b><span>' + marked + " / " + s.items.length + " 표기</span></div>" + rows + "</div>";
+    return '<div class="omr"><div class="omr-h"><b>답안지</b><span>' + marked + " / " + s.items.length + (je ? " 입력" : " 표기") + "</span></div>" + rows + "</div>";
   }
 
   function renderQuiz() {
     var s = S.session; if (!s) { go("home", false); return; }
     var it = s.items[s.idx], q = BY_ID[it.id], exam = s.mode === "exam", n = s.items.length;
-    var reveal = !exam && !!it.sel, last = s.idx === n - 1;
+    var je = isJE(), reveal = je ? !exam && !!it.graded : !exam && !!it.sel, last = s.idx === n - 1;
     var h = '<div class="q-top"><button class="iconbtn" id="quit" aria-label="처음으로">처음</button><b>' + esc(s.title) + "</b>" +
       '<span class="cnt">' + (exam ? '<span id="timer">' + mmss(s.elapsed) + "</span>" : (s.idx + 1) + " / " + n) + "</span></div>";
     h += '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span>" + reportBtn(q) + "</div>";
-    h += '<div class="question"><span class="qno">' + (s.idx + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, reveal);
-    if (reveal) h += feedbackHtml(q, it);
+    h += '<div class="question"><span class="qno">' + (s.idx + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x);
+    if (je) {
+      h += jeHtml(q, it, reveal, !reveal);
+      if (!exam && !reveal) h += '<button class="btn primary wide" id="grade">채점하기</button>';
+      if (reveal) h += jeFeedbackHtml(q, it);
+    } else {
+      h += choiceHtml(q, it, reveal);
+      if (reveal) h += feedbackHtml(q, it);
+    }
     var nextLabel = last ? (exam ? "제출" : "결과 보기") : "다음";
     h += '<div class="navrow"><button class="btn" id="prev"' + (s.idx === 0 ? " disabled" : "") + ">이전</button>" +
       '<button class="btn small" id="calc" aria-label="계산기">계산</button>' +
@@ -418,6 +611,17 @@
     app.querySelectorAll("[data-c]").forEach(function (b) {
       b.onclick = function () { answer(it, +b.getAttribute("data-c")); renderQuiz(); };
     });
+    if (je) {
+      bindJE(it, function () { renderQuiz(); });
+      bind("grade", function () {
+        if (!jePrecheck(it)) return;
+        gradeItem(it);
+        var key = it.src || it.id;
+        if (!it.ok) addNote(key); else if (s.mode === "note") delNote(key);
+        saveSession(); renderQuiz();
+        var fb = app.querySelector(".fb"); if (fb && fb.scrollIntoView) fb.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
     var omr = app.querySelector(".omr");
     if (omr) omr.onclick = function (e) {
       var bub = e.target.closest ? e.target.closest("[data-b]") : null;
@@ -437,8 +641,8 @@
     bind("prev", function () { if (s.idx > 0) goIdx(s.idx - 1); });
     bind("next", function () {
       if (!last) { goIdx(s.idx + 1); return; }
-      var blank = s.items.filter(function (x) { return !x.sel; }).length;
-      if (blank && !confirm(blank + "문항을 아직 안 풀었어요. " + (exam ? "제출할까요?" : "결과를 볼까요?"))) return;
+      var blank = s.items.filter(function (x) { return je ? (exam ? !jeFilled(x) : !x.graded) : !x.sel; }).length;
+      if (blank && !confirm(blank + "문항을 아직 " + (je && !exam ? "채점하지 않았어요. " : "안 풀었어요. ") + (exam ? "제출할까요?" : "결과를 볼까요?"))) return;
       finish();
     });
     if (exam) timerOn();
@@ -446,26 +650,29 @@
 
   function finish() {
     var s = S.session; s.submitted = true;
-    if (s.mode === "exam") s.items.forEach(function (x) { if (x.sel !== BY_ID[x.id].a) addNote(x.src || x.id); });
+    if (isJE()) s.items.forEach(function (x) { if (!x.graded) gradeItem(x); });
+    if (s.mode === "exam") s.items.forEach(function (x) { if (!isRight(x)) addNote(x.src || x.id); });
     saveSession(); go("result");
   }
 
   function renderResult() {
     var s = S.session; if (!s) { go("home", false); return; }
     var items = s.items, correct = 0, by = {}, weak = {};
-    AREAS.forEach(function (a) { by[a] = [0, 0]; });
+    var AL = areasList();
+    AL.forEach(function (a) { by[a] = [0, 0]; });
     items.forEach(function (x) {
-      var q = BY_ID[x.id], ok = x.sel === q.a, a = areaOf(q);
+      var q = BY_ID[x.id], ok = isRight(x), a = areaOf(q);
+      if (!by[a]) by[a] = [0, 0];
       if (ok) correct++;
       by[a][1]++; if (ok) by[a][0]++;
       if (!ok) weak[q.t] = (weak[q.t] || 0) + 1;
     });
-    var full = items.length === 15 && s.mode !== "note";
+    var full = !isJE() && items.length === 15 && s.mode !== "note";
     var h = '<div class="top"><button class="iconbtn" id="home" aria-label="처음으로" style="margin-left:-10px">‹ 처음</button><div></div></div>' +
       '<div class="score"><div class="sub">' + esc(s.title) + " 결과</div>" +
       (full ? '<div class="big">' + correct * 2 + '<span class="sub" style="font-size:.35em"> / 30점</span></div><div class="sub">' + correct + " / " + items.length + " 정답" + (s.mode === "exam" ? " · " + mmss(s.elapsed) : "") + "</div>"
-        : '<div class="big">' + correct + '<span class="sub" style="font-size:.35em"> / ' + items.length + "</span></div>") + "</div>";
-    h += '<div class="card">' + AREAS.filter(function (a) { return by[a][1]; }).map(function (a) {
+        : '<div class="big">' + correct + '<span class="sub" style="font-size:.35em"> / ' + items.length + "</span></div>" + (s.mode === "exam" ? '<div class="sub">' + mmss(s.elapsed) + "</div>" : "")) + "</div>";
+    h += '<div class="card">' + AL.filter(function (a) { return by[a][1]; }).map(function (a) {
       return '<div class="row"><span>' + a + "</span><span" + (by[a][0] < by[a][1] ? ' style="color:var(--bad);font-weight:700"' : "") + ">" + by[a][0] + " / " + by[a][1] + "</span></div>";
     }).join("") + "</div>";
     var wk = Object.keys(weak);
@@ -476,7 +683,7 @@
       h += '<p class="sub" style="margin:8px 2px 0">틀린 문제는 오답노트에 모였어요.</p>';
     }
     h += "<h2>문항별 확인</h2><div class=\"list\">" + items.map(function (x, i) {
-      var q = BY_ID[x.id], ok = x.sel === q.a;
+      var q = BY_ID[x.id], ok = isRight(x);
       return '<button data-r="' + i + '"><span>' + (i + 1) + ". " + esc(topicName(q.t)) + '</span><span style="color:var(--' + (ok ? "ok" : "bad") + ');font-weight:700">' + (ok ? "✓" : "✗") + "</span></button>";
     }).join("") + "</div>";
     var hasNote = noteIds().length > 0;
@@ -493,7 +700,8 @@
     var i = S.reviewIdx || 0, it = s.items[i], q = BY_ID[it.id], n = s.items.length;
     var h = '<div class="q-head"><button class="iconbtn" id="back" style="margin-left:-10px">‹ 결과</button><span>' + (i + 1) + " / " + n + "</span></div>" +
       '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span>" + reportBtn(q) + "</div>" +
-      '<div class="question"><span class="qno">' + (i + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, true) + feedbackHtml(q, it);
+      '<div class="question"><span class="qno">' + (i + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) +
+      (isJE() ? (jeFilled(it) ? '<div class="label" style="margin-top:4px">내가 입력한 분개</div>' + jeHtml(q, it, true, false) : "") + jeFeedbackHtml(q, it) : choiceHtml(q, it, true) + feedbackHtml(q, it));
     app.innerHTML = h + bar('<button class="btn small" id="p"' + (i === 0 ? " disabled" : "") + ' aria-label="이전">‹</button><button class="btn primary" id="nx">' + (i === n - 1 ? "결과로" : "다음 문항") + "</button>");
     bindReports();
     bind("back", function () { history.back(); });
@@ -509,19 +717,25 @@
     S.session = (saved && saved.items && saved.mode && saved.items.every(function (x) { return BY_ID[x.id]; })) ? saved : null;
   }
   var CACHE = {};
-  function fetchSubject(k) {
-    if (!CACHE[k]) CACHE[k] = fetch(SUBJ[k].file, { cache: "no-cache" }).then(function (r) { return r.json(); });
-    return CACHE[k];
+  function fileOf(k, area) { return area === "je" ? SUBJ[k].je : SUBJ[k].file; }
+  function fetchFile(f) {
+    if (!CACHE[f]) CACHE[f] = fetch(f, { cache: "no-cache" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    return CACHE[f];
   }
-  function preloadOthers() { Object.keys(SUBJ).forEach(function (k) { if (k !== S.subj) fetchSubject(k).catch(function () { delete CACHE[k]; }); }); }
-  function loadSubject(k, cb) {
-    fetchSubject(k).then(function (d) {
-      S.subj = k; DATA = d; BY_ID = {}; BY_GROUP = {}; TOPIC = {};
+  function preloadOthers() {
+    Object.keys(SUBJ).forEach(function (k) { ["th", "je"].forEach(function (a) { var f = fileOf(k, a); if (f) fetchFile(f).catch(function () { delete CACHE[f]; }); }); });
+  }
+  function loadSubject(k, area, cb) {
+    if (area === "je" && !SUBJ[k].je) area = "th";
+    var f = fileOf(k, area);
+    fetchFile(f).then(function (d) {
+      S.subj = k; S.area = area; DATA = d; BY_ID = {}; BY_GROUP = {}; TOPIC = {};
       d.topics.forEach(function (t) { TOPIC[t.code] = t; });
       d.questions.forEach(function (q) { BY_ID[q.id] = q; (BY_GROUP[q.g] = BY_GROUP[q.g] || []).push(q); });
       cb();
     }).catch(function () {
-      delete CACHE[k];
+      delete CACHE[f];
+      if (area === "je") { loadSubject(k, "th", cb); return; }
       app.innerHTML = '<div class="loading">문제를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요.</div>';
     });
   }
@@ -533,5 +747,5 @@
     S.screen = "home"; render();
   }
   if (sget("localStorage", "passup.big")) document.documentElement.classList.add("big");
-  loadSubject(S.subj, function () { if (checkAccess()) start(); else renderGate(); });
+  loadSubject(S.subj, S.area, function () { if (checkAccess()) start(); else renderGate(); });
 })();
