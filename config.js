@@ -1,6 +1,6 @@
 // 패스업 설정 — 여기 값만 바꾸면 됩니다.
 window.PASSUP_CONFIG = {
-  // 입장 코드(기수가 바뀌면 변경). 공지방 링크: https://<주소>/?code=202001
+  // 입장 코드(기수가 바뀌면 변경). 공지방 링크: https://cbt.oncoding.co.kr/?code=202001
   accessCode: "202001",
 
   // 오류 신고 구글폼 미리 채우기 링크. {id}, {subject} 자리에 문항 ID와 종목이 들어갑니다.
