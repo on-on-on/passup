@@ -18,5 +18,9 @@ window.PASSUP_CONFIG = {
     { round: 129, date: "2026-12-05" }
   ],
 
-  logoUrl: "https://on-on-on.github.io/oncoding-courses/logo.png"
+  // 로고 옆 작은 회색 글씨
+  byline: "by ONCODING",
+
+  // 처음 화면·입장 화면 맨 아래 안내문
+  notice: "패스업(PASS UP)은 온코딩컴퓨터학원 수강생의 합격을 위해 학원에서 직접 만든 학습용 CBT입니다. 수록된 문제와 해설은 학원이 자체 제작한 것으로, 수강생 외 공유와 무단 복제·캡처·배포를 금합니다."
 };

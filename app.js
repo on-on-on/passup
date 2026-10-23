@@ -50,7 +50,7 @@
       '<p class="sub">공지방에서 받은 링크로 들어오면 코드 없이 바로 열려요.</p>' +
       '<input id="code" class="input" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="입장 코드">' +
       (errMsg ? '<div class="err" role="alert">' + esc(errMsg) + "</div>" : "") +
-      '<div style="margin-top:14px"><button class="btn primary" style="width:100%" id="go">입장</button></div></div>';
+      '<div style="margin-top:14px"><button class="btn primary" style="width:100%" id="go">입장</button></div>' + noticeHtml() + "</div>";
     var inp = document.getElementById("code");
     function go() {
       if (!inp.value.trim()) { renderGate("코드를 입력하세요."); return; }
@@ -64,7 +64,11 @@
 
   // ---------- 공통 조각 ----------
   function logoHtml() {
-    return '<div class="logo">' + (CFG.logoUrl ? '<img src="' + esc(CFG.logoUrl) + '" alt="" onerror="this.remove()">' : "") + 'Pass<b>Up</b></div>';
+    return '<div class="logo"><picture><source srcset="logo-w.png" media="(prefers-color-scheme: dark)"><img src="logo.png" alt="PASS UP"></picture>' +
+      (CFG.byline ? '<span class="by">' + esc(CFG.byline) + "</span>" : "") + "</div>";
+  }
+  function noticeHtml() {
+    return CFG.notice ? '<p class="foot">' + esc(CFG.notice) + "</p>" : "";
   }
   function dday() {
     var t = today(), list = (CFG.exams || []).map(function (e) { var p = e.date.split("-"); return { round: e.round, d: new Date(+p[0], +p[1] - 1, +p[2]) }; })
@@ -261,7 +265,7 @@
       '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">15문항 · 다 풀고 한 번에 채점</div></button>' +
       '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">15문항 · 한 문제씩 바로 정답과 해설 확인</div></button>' +
       '<button class="card menu note" id="m-note"><span class="t">오답노트</span><span class="badge' + (nCount ? "" : " zero") + '">' + nCount + "</span></button>";
-    h += '<p class="sub center" style="margin-top:24px;font-size:.78em">문제는 시험 경향을 바탕으로 새로 만든 변형 문항입니다.</p>';
+    h += noticeHtml();
     app.innerHTML = h;
     bind("fs", function () { var on = document.documentElement.classList.toggle("big"); sset("localStorage", "passup.big", on); renderHome(); });
     bind("resume", function () { go("quiz"); });
