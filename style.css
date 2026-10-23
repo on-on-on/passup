@@ -86,10 +86,46 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .center{text-align:center}
 .input{width:100%;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--bg);color:var(--fg);text-align:center;font-size:1.3em;letter-spacing:.2em}
 .err{color:var(--bad);font-size:.9em;margin-top:8px}
-.calc{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));width:min(320px,calc(100% - 32px));background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:12px;z-index:6;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.calc{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));width:min(320px,calc(100% - 32px));background:var(--bg);border:1px solid var(--line);border-radius:18px;padding:12px;z-index:6;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 .calc .disp{font-variant-numeric:tabular-nums;text-align:right;font-size:1.4em;padding:6px 8px;min-height:2em;overflow-x:auto;white-space:nowrap}
 .calc .keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
 .calc .keys button{min-height:46px;border-radius:12px;border:0;background:var(--card);font-weight:600;font-size:1.05em;cursor:pointer}
 .calc .keys .op{background:var(--brand-soft);color:var(--brand)}
 .calc .keys .eq{background:var(--brand);color:var(--brand-ink)}
+.label{font-size:.85em;color:var(--sub);margin:18px 2px 8px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px}
+.seg button{min-height:52px;border-radius:14px;border:1px solid var(--line);background:var(--bg);font-weight:700;cursor:pointer;padding:6px 8px}
+.seg .on{background:var(--brand-soft);border:1.5px solid var(--brand);color:var(--brand)}
+.seg button:disabled{color:var(--sub);cursor:default}
+.seg small{font-weight:500;font-size:.8em}
+.menu.mode .t{font-size:1.15em}
+.menu.note{display:flex;justify-content:space-between;align-items:center;margin-top:8px}
+.badge{min-width:28px;height:28px;padding:0 8px;border-radius:14px;background:var(--brand);color:var(--brand-ink);font-weight:800;font-size:.85em;display:inline-flex;align-items:center;justify-content:center}
+.badge.zero{background:var(--line);color:var(--sub)}
+.q-top{display:flex;align-items:center;gap:6px;border-bottom:1.5px solid var(--brand);margin:-16px -16px 14px;padding:4px 6px;min-height:54px;position:sticky;top:0;background:var(--bg);z-index:4}
+.q-top .iconbtn{color:var(--sub)}
+.q-top b{flex:1}
+.q-top .cnt{font-weight:800;color:var(--brand);padding-right:10px;font-variant-numeric:tabular-nums;font-size:1.1em}
+.q-meta{display:flex;justify-content:space-between;font-size:.85em;margin-bottom:6px}
+.q-meta .area{color:var(--brand);font-weight:700}
+.fb{background:var(--card);border-left:4px solid var(--bad);border-radius:4px 14px 14px 4px;padding:12px 14px 6px;margin-top:14px}
+.fb.ok{border-left-color:var(--ok)}
+.fb-t{display:block;font-size:1.02em;margin-bottom:2px}
+.fb.ok .fb-t{color:var(--ok)}
+.fb .exp{margin:8px 0}
+.fb .meta{margin:4px 0 0}
+.navrow{display:flex;gap:8px;margin:18px 0 22px}
+.omr{border:1.5px solid var(--brand);border-radius:14px;padding:10px 8px 4px;margin:0 0 24px}
+.omr-h{display:flex;justify-content:space-between;color:var(--brand);font-size:.85em;padding:2px 6px 8px;border-bottom:1px solid var(--line)}
+.omr-row{display:grid;grid-template-columns:26px repeat(8,minmax(0,1fr));border-bottom:1px solid var(--line)}
+.omr-row:last-child{border-bottom:0}
+.omr-lab{color:var(--brand);font-size:.7em;font-weight:700;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;letter-spacing:.15em;border-right:1px solid var(--line)}
+.omr-cell{display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 0 9px;cursor:pointer;border-left:1px dashed var(--line)}
+.omr-lab+.omr-cell{border-left:0}
+.omr-n{font-size:.78em;font-weight:700;color:var(--brand);min-width:22px;text-align:center;border-radius:6px;line-height:21px;margin-bottom:2px}
+.omr-cell.cur .omr-n{background:var(--brand);color:var(--brand-ink)}
+.bub{width:16px;height:10px;border-radius:50%;border:1px solid var(--brand);opacity:.5}
+.bub.on{background:var(--brand);opacity:1}
+.bub.on.right{background:var(--ok);border-color:var(--ok)}
+.bub.on.bad{background:var(--bad);border-color:var(--bad)}
 .notice{background:var(--card);border-radius:12px;padding:10px 12px;font-size:.85em;color:var(--sub);margin:12px 0}

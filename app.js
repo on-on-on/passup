@@ -3,9 +3,11 @@
   var CFG = window.PASSUP_CONFIG || {};
   var app = document.getElementById("app");
   var DATA = null, BY_ID = {}, BY_GROUP = {}, TOPIC = {};
-  var S = { screen: "home", session: null, topicArea: null, calcOpen: false, calcExpr: "" };
+  var S = { screen: "home", session: null, calcOpen: false, calcExpr: "" };
   var CIRC = ["①", "②", "③", "④"];
   var AREAS = ["재무회계", "원가회계", "부가가치세"];
+  var AREA_SHORT = { "재무회계": "재무회계", "원가회계": "원가회계", "부가가치세": "부가세" };
+  var MAX_NOTE_SET = 15;
 
   // ---------- 저장소(실패해도 동작) ----------
   function sget(store, k) { try { return JSON.parse(window[store].getItem(k)); } catch (e) { return null; } }
@@ -19,6 +21,13 @@
   function topicName(code) { return TOPIC[code] ? TOPIC[code].name : code; }
   function mmss(sec) { sec = Math.max(0, Math.floor(sec)); var m = Math.floor(sec / 60), s = sec % 60; return m + ":" + (s < 10 ? "0" : "") + s; }
   function today() { var d = new Date(); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function topicOrder(q) { for (var i = 0; i < DATA.topics.length; i++) if (DATA.topics[i].code === q.t) return i; return 999; }
+
+  // ---------- 오답노트(이 기기에만 저장) ----------
+  function notes() { var w = sget("localStorage", "passup.wrong"); return w && typeof w === "object" ? w : {}; }
+  function noteIds() { var w = notes(); return Object.keys(w).filter(function (id) { return BY_ID[id]; }); }
+  function addNote(id) { var w = notes(); if (!w[id]) w[id] = { at: Date.now() }; sset("localStorage", "passup.wrong", w); }
+  function delNote(id) { var w = notes(); if (w[id]) { delete w[id]; sset("localStorage", "passup.wrong", w); } }
 
   // ---------- 입장 코드 ----------
   function checkAccess() {
@@ -92,15 +101,18 @@
   }
 
   // ---------- 세션 ----------
+  // mode: exam(시험 모드) | practice(연습 모드) | note(오답노트 풀이)
   function saveSession() { if (S.session) sset("sessionStorage", "passup.session", S.session); else sdel("sessionStorage", "passup.session"); }
-  function newSession(mode, title, ids, extra) {
-    S.session = { mode: mode, title: title, items: ids.map(function (id) { return { id: id, sel: 0, flag: false, checked: false }; }), idx: 0, elapsed: 0, submitted: false, used: ids.slice() };
-    if (extra) for (var k in extra) S.session[k] = extra[k];
+  function newSession(mode, title, list) {
+    S.session = {
+      mode: mode, title: title, idx: 0, elapsed: 0, submitted: false,
+      items: list.map(function (x) { return typeof x === "string" ? { id: x, sel: 0 } : { id: x.id, src: x.src, sel: 0 }; })
+    };
     saveSession();
     go("quiz");
   }
   function pickExam() {
-    var spec = [["재무회계", 8], ["원가회계", 4], ["부가가치세", 3]], usedG = {}, order = DATA.topics.map(function (t) { return t.code; }), ids = [];
+    var spec = [["재무회계", 8], ["원가회계", 4], ["부가가치세", 3]], usedG = {}, ids = [];
     var slots = []; spec.forEach(function (s) { for (var i = 0; i < s[1]; i++) slots.push(s[0]); });
     var simTarget = 2 + Math.floor(Math.random() * 2), simNeed = {};
     shuffle(slots).slice(0, simTarget).forEach(function (a) { simNeed[a] = (simNeed[a] || 0) + 1; });
@@ -115,29 +127,38 @@
       take("심화", wantSim);
       take("실전", s[1] - got.length);
       if (got.length < s[1]) take("심화", s[1] - got.length);
-      got.sort(function (a, b) { return order.indexOf(a.t) - order.indexOf(b.t); });
+      got.sort(function (a, b) { return topicOrder(a) - topicOrder(b); });
       got.forEach(function (q) { ids.push(q.id); });
     });
     return ids;
   }
-  function startExam() { newSession("exam", "실전 모의고사", pickExam()); }
-  function startTopic(code) {
-    var rank = { "기본": 0, "실전": 1, "심화": 2 };
-    var qs = shuffle(DATA.questions.filter(function (q) { return q.t === code; })).sort(function (a, b) { return rank[a.d] - rank[b.d]; });
-    newSession("practice", topicName(code), qs.map(function (q) { return q.id; }));
-  }
-  function startRandom() { newSession("practice", "랜덤 10문제", shuffle(DATA.questions).slice(0, 10).map(function (q) { return q.id; })); }
   function twinOf(id, used) {
     var q = BY_ID[id], group = BY_GROUP[q.g] || [];
     var fresh = shuffle(group.filter(function (x) { return x.id !== id && used.indexOf(x.id) < 0; }));
-    if (fresh.length) return { q: fresh[0], fresh: true };
+    if (fresh.length) return fresh[0];
     var any = shuffle(group.filter(function (x) { return x.id !== id; }));
-    return any.length ? { q: any[0], fresh: false } : null;
+    return any.length ? any[0] : null;
   }
-  function startRetry(wrongIds) {
-    var used = [], ids = [];
-    wrongIds.forEach(function (id) { var t = twinOf(id, used.concat(wrongIds)); var nid = t ? t.q.id : id; ids.push(nid); used.push(nid); });
-    newSession("practice", "틀린 개념 다시 풀기", ids);
+  // 오답 목록 → 풀이 세트(영역 순 정렬). similar=true면 같은 개념의 다른 문제로 바꿔서 출제
+  function noteSet(ids, similar) {
+    var used = ids.slice(), out = [];
+    ids.forEach(function (id) {
+      var nid = id;
+      if (similar) { var t = twinOf(id, used); if (t) { nid = t.id; used.push(nid); } }
+      out.push({ id: nid, src: id });
+    });
+    out.sort(function (a, b) { return topicOrder(BY_ID[a.id]) - topicOrder(BY_ID[b.id]); });
+    return out;
+  }
+  function startNote(similar) {
+    var w = notes();
+    var ids = noteIds().sort(function (a, b) { return w[a].at - w[b].at; }).slice(0, MAX_NOTE_SET);
+    if (!ids.length) return;
+    newSession("note", similar ? "오답노트 · 비슷한 문제" : "오답노트 · 다시 풀기", noteSet(ids, similar));
+  }
+  function confirmNew() {
+    var cur = S.session && !S.session.submitted ? S.session : null;
+    return !cur || confirm("풀던 문제가 있어요. 새로 시작할까요?");
   }
 
   // ---------- 화면 전환 ----------
@@ -148,7 +169,7 @@
   }
   window.addEventListener("popstate", function () {
     if (S.screen === "quiz" && S.session && !S.session.submitted && S.session.mode === "exam") {
-      if (!confirm("모의고사를 그만둘까요? 홈에서 이어서 풀 수 있어요.")) { try { history.pushState({ s: "quiz" }, ""); } catch (e) {} return; }
+      if (!confirm("시험을 그만둘까요? 처음 화면에서 이어서 풀 수 있어요.")) { try { history.pushState({ s: "quiz" }, ""); } catch (e) {} return; }
     }
     if (S.screen === "review") { go("result", false); return; }
     go("home", false);
@@ -172,44 +193,60 @@
   function render() {
     timerOff();
     if (S.screen === "home") renderHome();
-    else if (S.screen === "topics") renderTopics();
+    else if (S.screen === "note") renderNote();
     else if (S.screen === "quiz") renderQuiz();
     else if (S.screen === "result") renderResult();
     else if (S.screen === "review") renderReview();
   }
 
   function renderHome() {
-    var d = dday(), last = sget("localStorage", "passup.last"), cur = S.session && !S.session.submitted ? S.session : null;
+    var d = dday(), cur = S.session && !S.session.submitted ? S.session : null, nCount = noteIds().length;
     var h = '<div class="top">' + logoHtml() + '<button class="iconbtn" id="fs" aria-label="글자 크기">가' + (document.documentElement.classList.contains("big") ? "-" : "+") + "</button></div>" +
-      '<div class="sub" style="margin:-8px 0 12px">' + esc(DATA.subject) + " 이론</div>" +
       '<div class="card"><div class="sub">다음 시험</div><div class="big-num">' + esc(d.label) + '</div><div class="sub">' + esc(d.sub) + "</div></div>";
     if (cur) h += '<button class="card menu hero" id="resume"><div class="sub">풀던 문제가 있어요</div><div class="t">' + esc(cur.title) + " 이어서 풀기</div></button>";
-    h += '<button class="card menu" id="m-exam"><div class="t">실전 모의고사</div><div class="sub">15문항 · 시험과 같은 번호 구성</div></button>' +
-      '<button class="card menu" id="m-topic"><div class="t">주제별 연습</div><div class="sub">' + DATA.topics.length + "개 주제 중 골라서</div></button>" +
-      '<button class="card menu" id="m-rand"><div class="t">랜덤 10문제</div><div class="sub">짧게 풀기</div></button>';
-    if (last) h += '<p class="sub center" style="margin-top:16px">최근 결과 · ' + esc(last.title) + " " + last.correct + " / " + last.total + "</p>";
+    h += '<div class="label">종목</div><div class="seg">' +
+      '<button class="on" aria-pressed="true">' + esc(DATA.subject) + "</button>" +
+      '<button disabled>전산세무 2급 <small>(준비 중)</small></button></div>';
+    h += '<div class="label">풀이 방식</div>' +
+      '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">15문항 · 다 풀고 한 번에 채점</div></button>' +
+      '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">15문항 · 한 문제씩 바로 정답과 해설 확인</div></button>' +
+      '<button class="card menu note" id="m-note"><span class="t">오답노트</span><span class="badge' + (nCount ? "" : " zero") + '">' + nCount + "</span></button>";
     h += '<p class="sub center" style="margin-top:24px;font-size:.78em">문제는 시험 경향을 바탕으로 새로 만든 변형 문항입니다.</p>';
     app.innerHTML = h;
     bind("fs", function () { var on = document.documentElement.classList.toggle("big"); sset("localStorage", "passup.big", on); renderHome(); });
     bind("resume", function () { go("quiz"); });
-    bind("m-exam", function () { if (cur && cur.mode === "exam" && !confirm("풀던 모의고사가 있어요. 새로 시작할까요?")) return; startExam(); });
-    bind("m-topic", function () { go("topics"); });
-    bind("m-rand", startRandom);
+    bind("m-exam", function () { if (confirmNew()) newSession("exam", "시험 모드", pickExam()); });
+    bind("m-prac", function () { if (confirmNew()) newSession("practice", "연습 모드", pickExam()); });
+    bind("m-note", function () { go("note"); });
   }
 
-  function renderTopics() {
-    var h = '<div class="top"><button class="iconbtn" id="back" aria-label="뒤로">‹ 홈</button><div></div></div><h1>주제별 연습</h1>';
-    AREAS.forEach(function (a) {
-      h += '<div class="area-title">' + a + '</div><div class="list">';
-      DATA.topics.filter(function (t) { return t.area === a; }).forEach(function (t) {
-        var n = DATA.questions.filter(function (q) { return q.t === t.code; }).length;
-        h += '<button data-t="' + t.code + '"><span>' + esc(t.name) + '</span><span class="sub">' + n + "문항 ›</span></button>";
+  function renderNote() {
+    var ids = noteIds(), n = ids.length;
+    var h = '<div class="top"><button class="iconbtn" id="back" aria-label="처음으로" style="margin-left:-10px">‹ 처음</button><div></div></div><h1>오답노트</h1>' +
+      '<p class="sub" style="margin-top:-6px">틀린 문제가 자동으로 모여요. 오답노트에서 다시 풀어 맞히면 빠져요.</p>';
+    if (!n) {
+      h += '<div class="card center" style="padding:28px 16px"><div class="t" style="font-weight:700">아직 틀린 문제가 없어요</div><div class="sub">시험 모드나 연습 모드에서 틀린 문제가 여기에 모여요.</div></div>';
+    } else {
+      h += '<div class="card"><div class="sub">모인 문제</div><div class="big-num">' + n + '<span class="sub" style="font-size:.5em"> 문항</span></div>' +
+        (n > MAX_NOTE_SET ? '<div class="sub">한 번에 오래된 순으로 ' + MAX_NOTE_SET + "문항씩 풀어요.</div>" : "") + "</div>" +
+        '<button class="card menu mode" id="w-same"><div class="t">틀린 문제 다시 풀기</div><div class="sub">같은 문제를 한 번 더</div></button>' +
+        '<button class="card menu mode" id="w-sim"><div class="t">비슷한 문제로 풀기</div><div class="sub">같은 개념, 숫자·보기가 다른 문제로</div></button>';
+      var by = {};
+      ids.forEach(function (id) { var q = BY_ID[id], a = areaOf(q); (by[a] = by[a] || {})[q.t] = (by[a][q.t] || 0) + 1; });
+      AREAS.forEach(function (a) {
+        if (!by[a]) return;
+        h += '<div class="area-title">' + a + '</div><div class="card" style="padding:4px 16px">' + Object.keys(by[a]).sort(function (x, y) { return topicOrder({ t: x }) - topicOrder({ t: y }); }).map(function (t) {
+          return '<div class="row"><span>' + esc(topicName(t)) + '</span><span class="pill">' + by[a][t] + "문항</span></div>";
+        }).join("") + "</div>";
       });
-      h += "</div>";
-    });
+      h += '<div class="center"><button class="link" id="w-clear">오답노트 비우기</button></div>';
+    }
+    h += '<div class="notice">오답노트는 이 폰에만 저장돼요. 카톡 캐시를 지우거나 폰을 바꾸면 사라질 수 있어요.</div>';
     app.innerHTML = h;
     bind("back", function () { history.back(); });
-    app.querySelectorAll("[data-t]").forEach(function (b) { b.onclick = function () { startTopic(b.getAttribute("data-t")); }; });
+    bind("w-same", function () { if (confirmNew()) startNote(false); });
+    bind("w-sim", function () { if (confirmNew()) startNote(true); });
+    bind("w-clear", function () { if (confirm("오답노트를 모두 지울까요?")) { sdel("localStorage", "passup.wrong"); renderNote(); } });
   }
 
   function choiceHtml(q, it, reveal) {
@@ -222,14 +259,13 @@
       return '<button class="' + cls + '" data-c="' + n + '"' + (reveal ? " disabled" : "") + '><span class="n">' + CIRC[i] + "</span><span>" + esc(c) + "</span>" + mark + "</button>";
     }).join("") + "</div>";
   }
-  function feedbackHtml(q, it, showTopic) {
+  function feedbackHtml(q, it) {
     var ok = it.sel === q.a;
-    var h = '<div style="margin-top:14px">' +
-      (it.sel ? '<div class="result-banner ' + (ok ? "ok" : "bad") + '">' + (ok ? "✓ 정답이에요" : "✗ 정답은 " + CIRC[q.a - 1] + " · 내 답 " + CIRC[it.sel - 1]) + "</div>" :
-        '<div class="result-banner bad">✗ 안 푼 문제 · 정답 ' + CIRC[q.a - 1] + "</div>");
-    if (q.p) h += '<div class="trap"><b>⚠ 이 문제의 함정</b>' + esc(q.p) + "</div>";
-    h += '<div class="exp">' + esc(q.e) + "</div>";
-    h += '<div class="meta">' + (showTopic ? esc(topicName(q.t)) + " · " : "") + esc(q.id) + "</div>" + reportLink(q) + "</div>";
+    var title = !it.sel ? "안 푼 문제예요 · 정답은 " + CIRC[q.a - 1] + "번" : ok ? "정답이에요" : "정답은 " + CIRC[q.a - 1] + "번이에요";
+    var h = '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" +
+      (q.p ? '<div class="trap"><b>⚠ 이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
+      '<div class="exp">' + esc(q.e) + "</div>" +
+      '<div class="meta">' + esc(topicName(q.t)) + " · " + esc(q.id) + "</div>" + reportLink(q) + "</div>";
     return h;
   }
   function calcHtml() {
@@ -237,9 +273,10 @@
     var keys = ["C", "⌫", "(", ")", "7", "8", "9", "÷", "4", "5", "6", "×", "1", "2", "3", "−", "0", "00", ".", "+"];
     return '<div class="calc" role="dialog" aria-label="계산기"><div class="disp" id="cd">' + esc(S.calcExpr || "0") + '</div><div class="keys">' +
       keys.map(function (k) { return '<button data-k="' + k + '" class="' + ("÷×−+".indexOf(k) >= 0 ? "op" : "") + '">' + k + "</button>"; }).join("") +
-      '<button data-k="=" class="eq" style="grid-column:span 4">=</button></div></div>';
+      '<button data-k="=" class="eq" style="grid-column:span 3">=</button><button data-k="닫기" style="grid-column:span 1">닫기</button></div></div>';
   }
   function calcPress(k) {
+    if (k === "닫기") { S.calcOpen = false; renderQuiz(); return; }
     var e = S.calcExpr;
     if (k === "C") e = "";
     else if (k === "⌫") e = e.slice(0, -1);
@@ -252,60 +289,87 @@
     S.calcExpr = e; var d = document.getElementById("cd"); if (d) d.textContent = e || "0";
   }
 
+  // OMR 답안지: 영역별 줄, 한 줄 최대 8문항
+  function omrHtml(s) {
+    var exam = s.mode === "exam", groups = [], marked = 0;
+    s.items.forEach(function (x, i) {
+      if (x.sel) marked++;
+      var a = areaOf(BY_ID[x.id]), g = groups[groups.length - 1];
+      if (!g || g.area !== a) { g = { area: a, idxs: [] }; groups.push(g); }
+      g.idxs.push(i);
+    });
+    var rows = "";
+    groups.forEach(function (g) {
+      for (var k = 0; k < g.idxs.length; k += 8) {
+        rows += '<div class="omr-row"><div class="omr-lab">' + (k === 0 ? esc(AREA_SHORT[g.area] || g.area) : "") + "</div>" +
+          g.idxs.slice(k, k + 8).map(function (i) {
+            var x = s.items[i], q = BY_ID[x.id], reveal = !exam && x.sel, cls = "omr-cell";
+            if (i === s.idx) cls += " cur";
+            if (reveal) cls += x.sel === q.a ? " ok" : " ng";
+            var b = "";
+            for (var c = 1; c <= 4; c++) {
+              var bc = "bub";
+              if (x.sel === c) bc += " on" + (reveal ? (c === q.a ? " right" : " bad") : "");
+              b += '<span class="' + bc + '" data-b="' + i + ":" + c + '" aria-hidden="true"></span>';
+            }
+            return '<div class="' + cls + '" data-g="' + i + '" role="button" aria-label="' + (i + 1) + "번" + (x.sel ? " 표기함" : "") + '"><span class="omr-n">' + (i + 1) + "</span>" + b + "</div>";
+          }).join("") + "</div>";
+      }
+    });
+    return '<div class="omr"><div class="omr-h"><b>답안지</b><span>' + marked + " / " + s.items.length + " 표기</span></div>" + rows + "</div>";
+  }
+
   function renderQuiz() {
     var s = S.session; if (!s) { go("home", false); return; }
     var it = s.items[s.idx], q = BY_ID[it.id], exam = s.mode === "exam", n = s.items.length;
-    var h = '<div class="q-head"><button class="iconbtn" id="quit" aria-label="그만하기" style="margin-left:-10px">✕</button><span>' + esc(s.title) + "</span>" +
-      (exam ? '<span id="timer">' + mmss(s.elapsed) + "</span>" : "<span>" + (s.idx + 1) + " / " + n + "</span>") + "</div>";
-    if (exam) {
-      h += '<div class="grid" role="navigation" aria-label="문항 번호">' + s.items.map(function (x, i) {
-        return '<button data-g="' + i + '" class="' + (x.sel ? "done " : "") + (x.flag ? "flag " : "") + (i === s.idx ? "cur" : "") + '" aria-label="' + (i + 1) + "번" + (x.sel ? " 풀었음" : "") + (x.flag ? " 표시함" : "") + '">' + (i + 1) + "</button>";
-      }).join("") + "</div>";
-    } else h += '<div class="progress"><i style="width:' + Math.round((s.idx + (it.checked ? 1 : 0)) / n * 100) + '%"></i></div>';
-    h += '<div class="question"><span class="qno">' + (s.idx + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, !exam && it.checked);
-    if (!exam && it.checked) {
-      h += feedbackHtml(q, it, true);
-      if (it.sel !== q.a) h += '<button class="btn" style="width:100%;margin-top:8px" id="twin">같은 개념 다시 풀기</button>';
-    }
-    var last = s.idx === n - 1, btns = "";
-    if (exam) {
-      btns = '<button class="btn small" id="prev" aria-label="이전"' + (s.idx === 0 ? " disabled" : "") + ">‹</button>" +
-        '<button class="btn small" id="flag" aria-label="나중에 다시 보기">' + (it.flag ? "⚑" : "⚐") + "</button>" +
-        '<button class="btn small" id="calc" aria-label="계산기">계산</button>' +
-        '<button class="btn primary" id="next">' + (last ? "제출" : "다음") + "</button>";
-    } else {
-      btns = '<button class="btn small" id="calc" aria-label="계산기">계산</button>' +
-        (it.checked ? '<button class="btn primary" id="next">' + (last ? "결과 보기" : "다음") + "</button>" : '<button class="btn primary" id="check"' + (it.sel ? "" : " disabled") + ">확인</button>");
-    }
-    app.innerHTML = h + calcHtml() + bar(btns);
+    var reveal = !exam && !!it.sel, last = s.idx === n - 1;
+    var h = '<div class="q-top"><button class="iconbtn" id="quit" aria-label="처음으로">처음</button><b>' + esc(s.title) + "</b>" +
+      '<span class="cnt">' + (exam ? '<span id="timer">' + mmss(s.elapsed) + "</span>" : (s.idx + 1) + " / " + n) + "</span></div>";
+    h += '<div class="q-meta"><span class="area">' + esc(areaOf(q)) + "</span><span class=\"sub\">" + (s.idx + 1) + " / " + n + "</span></div>";
+    h += '<div class="question"><span class="qno">' + (s.idx + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, reveal);
+    if (reveal) h += feedbackHtml(q, it);
+    var nextLabel = last ? (exam ? "제출" : "결과 보기") : "다음";
+    h += '<div class="navrow"><button class="btn" id="prev"' + (s.idx === 0 ? " disabled" : "") + ">이전</button>" +
+      '<button class="btn small" id="calc" aria-label="계산기">계산</button>' +
+      '<button class="btn primary" id="next">' + nextLabel + "</button></div>";
+    h += omrHtml(s);
+    app.innerHTML = h + calcHtml();
 
+    function goIdx(i) { s.idx = i; saveSession(); renderQuiz(); window.scrollTo(0, 0); }
+    function answer(item, c) {
+      if (!exam && item.sel) return;              // 연습·오답노트: 한 번 고르면 확정
+      item.sel = c;
+      if (!exam) {
+        var qq = BY_ID[item.id], key = item.src || item.id;
+        if (c !== qq.a) addNote(key);
+        else if (s.mode === "note") delNote(key);
+      }
+      saveSession();
+    }
     app.querySelectorAll("[data-c]").forEach(function (b) {
-      b.onclick = function () { if (!exam && it.checked) return; it.sel = +b.getAttribute("data-c"); saveSession(); renderQuiz(); };
+      b.onclick = function () { answer(it, +b.getAttribute("data-c")); renderQuiz(); };
     });
-    app.querySelectorAll("[data-g]").forEach(function (b) { b.onclick = function () { s.idx = +b.getAttribute("data-g"); saveSession(); renderQuiz(); window.scrollTo(0, 0); }; });
+    var omr = app.querySelector(".omr");
+    if (omr) omr.onclick = function (e) {
+      var bub = e.target.closest ? e.target.closest("[data-b]") : null;
+      if (bub && exam) {
+        var p = bub.getAttribute("data-b").split(":"), i = +p[0];
+        answer(s.items[i], +p[1]); s.idx = i; saveSession(); renderQuiz(); return;
+      }
+      var cell = e.target.closest ? e.target.closest("[data-g]") : null;
+      if (cell) goIdx(+cell.getAttribute("data-g"));
+    };
     app.querySelectorAll("[data-k]").forEach(function (b) { b.onclick = function () { calcPress(b.getAttribute("data-k")); }; });
     bind("quit", function () {
-      if (exam && !confirm("모의고사를 그만둘까요? 홈에서 이어서 풀 수 있어요.")) return;
-      if (!exam) { S.session = null; saveSession(); }
+      if (exam && !confirm("시험을 그만둘까요? 처음 화면에서 이어서 풀 수 있어요.")) return;
       go("home");
     });
     bind("calc", function () { S.calcOpen = !S.calcOpen; renderQuiz(); });
-    bind("prev", function () { if (s.idx > 0) { s.idx--; saveSession(); renderQuiz(); window.scrollTo(0, 0); } });
-    bind("flag", function () { it.flag = !it.flag; saveSession(); renderQuiz(); });
-    bind("check", function () { if (!it.sel) return; it.checked = true; saveSession(); renderQuiz(); });
-    bind("twin", function () {
-      var t = twinOf(it.id, s.used);
-      if (!t) { alert("이 개념의 다른 문제가 아직 없어요."); return; }
-      if (!t.fresh) alert("이 개념 문제를 모두 풀었어요. 앞에서 푼 문제를 다시 낼게요.");
-      s.items.splice(s.idx + 1, 0, { id: t.q.id, sel: 0, flag: false, checked: false, twin: true });
-      s.used.push(t.q.id); s.idx++; saveSession(); renderQuiz(); window.scrollTo(0, 0);
-    });
+    bind("prev", function () { if (s.idx > 0) goIdx(s.idx - 1); });
     bind("next", function () {
-      if (!last) { s.idx++; saveSession(); renderQuiz(); window.scrollTo(0, 0); return; }
-      if (exam) {
-        var blank = s.items.filter(function (x) { return !x.sel; }).length;
-        if (blank && !confirm(blank + "문항을 아직 안 풀었어요. 제출할까요?")) return;
-      }
+      if (!last) { goIdx(s.idx + 1); return; }
+      var blank = s.items.filter(function (x) { return !x.sel; }).length;
+      if (blank && !confirm(blank + "문항을 아직 안 풀었어요. " + (exam ? "제출할까요?" : "결과를 볼까요?"))) return;
       finish();
     });
     if (exam) timerOn();
@@ -313,8 +377,7 @@
 
   function finish() {
     var s = S.session; s.submitted = true;
-    var correct = s.items.filter(function (x) { return x.sel === BY_ID[x.id].a; }).length;
-    sset("localStorage", "passup.last", { title: s.title, correct: correct, total: s.items.length, at: Date.now() });
+    if (s.mode === "exam") s.items.forEach(function (x) { if (x.sel !== BY_ID[x.id].a) addNote(x.src || x.id); });
     saveSession(); go("result");
   }
 
@@ -328,37 +391,39 @@
       by[a][1]++; if (ok) by[a][0]++;
       if (!ok) weak[q.t] = (weak[q.t] || 0) + 1;
     });
-    var exam = s.mode === "exam";
-    var h = '<div class="top"><button class="iconbtn" id="home" aria-label="홈">‹ 홈</button><div></div></div>' +
+    var full = items.length === 15 && s.mode !== "note";
+    var h = '<div class="top"><button class="iconbtn" id="home" aria-label="처음으로" style="margin-left:-10px">‹ 처음</button><div></div></div>' +
       '<div class="score"><div class="sub">' + esc(s.title) + " 결과</div>" +
-      (exam ? '<div class="big">' + correct * 2 + '<span class="sub" style="font-size:.35em"> / 30점</span></div><div class="sub">' + correct + " / " + items.length + " 정답 · " + mmss(s.elapsed) + "</div>"
+      (full ? '<div class="big">' + correct * 2 + '<span class="sub" style="font-size:.35em"> / 30점</span></div><div class="sub">' + correct + " / " + items.length + " 정답" + (s.mode === "exam" ? " · " + mmss(s.elapsed) : "") + "</div>"
         : '<div class="big">' + correct + '<span class="sub" style="font-size:.35em"> / ' + items.length + "</span></div>") + "</div>";
     h += '<div class="card">' + AREAS.filter(function (a) { return by[a][1]; }).map(function (a) {
       return '<div class="row"><span>' + a + "</span><span" + (by[a][0] < by[a][1] ? ' style="color:var(--bad);font-weight:700"' : "") + ">" + by[a][0] + " / " + by[a][1] + "</span></div>";
     }).join("") + "</div>";
     var wk = Object.keys(weak);
     if (wk.length) {
-      h += "<h2>다시 볼 주제</h2><div class=\"list\">" + wk.map(function (t) {
-        return '<button data-t="' + t + '"><span>' + esc(topicName(t)) + '</span><span class="pill">' + weak[t] + "문항 틀림</span></button>";
+      h += '<h2>다시 볼 주제</h2><div class="card" style="padding:4px 16px">' + wk.map(function (t) {
+        return '<div class="row"><span>' + esc(topicName(t)) + '</span><span class="pill">' + weak[t] + "문항 틀림</span></div>";
       }).join("") + "</div>";
+      h += '<p class="sub" style="margin:8px 2px 0">틀린 문제는 오답노트에 모였어요.</p>';
     }
     h += "<h2>문항별 확인</h2><div class=\"list\">" + items.map(function (x, i) {
       var q = BY_ID[x.id], ok = x.sel === q.a;
       return '<button data-r="' + i + '"><span>' + (i + 1) + ". " + esc(topicName(q.t)) + '</span><span style="color:var(--' + (ok ? "ok" : "bad") + ');font-weight:700">' + (ok ? "✓" : "✗") + "</span></button>";
     }).join("") + "</div>";
-    var wrong = items.filter(function (x) { return x.sel !== BY_ID[x.id].a; }).map(function (x) { return x.id; });
-    app.innerHTML = h + bar(wrong.length ? '<button class="btn primary" id="retry">틀린 개념 다시 풀기 (' + wrong.length + ")</button>" : '<button class="btn primary" id="home2">홈으로</button>');
-    bind("home", function () { S.session = null; saveSession(); go("home"); });
-    bind("home2", function () { S.session = null; saveSession(); go("home"); });
-    bind("retry", function () { startRetry(wrong); });
-    app.querySelectorAll("[data-t]").forEach(function (b) { b.onclick = function () { startTopic(b.getAttribute("data-t")); }; });
+    var hasNote = noteIds().length > 0;
+    app.innerHTML = h + bar('<button class="btn" id="home2">처음으로</button>' + (hasNote ? '<button class="btn primary" id="tonote">오답노트</button>' : ""));
+    function leave(screen) { S.session = null; saveSession(); go(screen); }
+    bind("home", function () { leave("home"); });
+    bind("home2", function () { leave("home"); });
+    bind("tonote", function () { leave("note"); });
     app.querySelectorAll("[data-r]").forEach(function (b) { b.onclick = function () { S.reviewIdx = +b.getAttribute("data-r"); go("review"); }; });
   }
 
   function renderReview() {
-    var s = S.session, i = S.reviewIdx || 0, it = s.items[i], q = BY_ID[it.id], n = s.items.length;
+    var s = S.session; if (!s) { go("home", false); return; }
+    var i = S.reviewIdx || 0, it = s.items[i], q = BY_ID[it.id], n = s.items.length;
     var h = '<div class="q-head"><button class="iconbtn" id="back" style="margin-left:-10px">‹ 결과</button><span>' + (i + 1) + " / " + n + "</span></div>" +
-      '<div class="question"><span class="qno">' + (i + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, true) + feedbackHtml(q, it, true);
+      '<div class="question"><span class="qno">' + (i + 1) + ".</span> " + esc(q.q) + "</div>" + dataHtml(q.x) + choiceHtml(q, it, true) + feedbackHtml(q, it);
     app.innerHTML = h + bar('<button class="btn small" id="p"' + (i === 0 ? " disabled" : "") + ' aria-label="이전">‹</button><button class="btn primary" id="nx">' + (i === n - 1 ? "결과로" : "다음 문항") + "</button>");
     bind("back", function () { history.back(); });
     bind("p", function () { S.reviewIdx = i - 1; renderReview(); window.scrollTo(0, 0); });
@@ -371,7 +436,7 @@
   function start() {
     if (sget("localStorage", "passup.big")) document.documentElement.classList.add("big");
     var saved = sget("sessionStorage", "passup.session");
-    if (saved && saved.items && saved.items.every(function (x) { return BY_ID[x.id]; })) S.session = saved;
+    if (saved && saved.items && saved.mode && saved.items.every(function (x) { return BY_ID[x.id]; })) S.session = saved;
     try { history.replaceState({ s: "home" }, ""); } catch (e) {}
     S.screen = "home"; render();
   }
