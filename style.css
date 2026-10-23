@@ -108,10 +108,13 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .q-top .cnt{font-weight:800;color:var(--brand);padding-right:10px;font-variant-numeric:tabular-nums;font-size:1.1em}
 .q-meta{display:flex;justify-content:space-between;font-size:.85em;margin-bottom:6px}
 .q-meta .area{color:var(--brand);font-weight:700}
-.fb{background:var(--card);border-left:4px solid var(--bad);border-radius:4px 14px 14px 4px;padding:12px 14px 6px;margin-top:14px}
-.fb.ok{border-left-color:var(--ok)}
-.fb-t{display:block;font-size:1.02em;margin-bottom:2px}
+.fb{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:14px 16px 8px;margin-top:14px}
+.fb-t{display:block;font-size:1.02em;margin-bottom:4px;color:var(--bad)}
 .fb.ok .fb-t{color:var(--ok)}
+.fb .trap{background:var(--brand-soft);color:var(--fg);border-radius:10px;padding:10px 12px;margin:10px 0}
+.fb .trap b{color:var(--brand);font-size:.9em}
+.choice.right .mark{color:var(--ok)}
+.choice.wrong .mark{color:var(--bad)}
 .fb .exp{margin:8px 0}
 .fb .meta{margin:4px 0 0}
 .navrow{display:flex;gap:8px;margin:18px 0 22px}

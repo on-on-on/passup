@@ -263,7 +263,7 @@
     var ok = it.sel === q.a;
     var title = !it.sel ? "안 푼 문제예요 · 정답은 " + CIRC[q.a - 1] + "번" : ok ? "정답이에요" : "정답은 " + CIRC[q.a - 1] + "번이에요";
     var h = '<div class="fb ' + (ok ? "ok" : "bad") + '"><b class="fb-t">' + title + "</b>" +
-      (q.p ? '<div class="trap"><b>⚠ 이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
+      (q.p ? '<div class="trap"><b>이 문제의 함정</b>' + esc(q.p) + "</div>" : "") +
       '<div class="exp">' + esc(q.e) + "</div>" +
       '<div class="meta">' + esc(topicName(q.t)) + " · " + esc(q.id) + "</div>" + reportLink(q) + "</div>";
     return h;
