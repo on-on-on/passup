@@ -282,7 +282,8 @@
     }
     var sd = sideSum(it.dr), sc = sideSum(it.cr);
     return '<div class="je">' + (q.v ? vHtml(q, it, g ? g.vc : null, editable) : "") + side("dr", "차변") + side("cr", "대변") +
-      '<div class="je-sum' + (sd !== sc ? " off" : "") + '" id="je-sum"><span>차변 합계 <b>' + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span></div></div>";
+      '<div class="je-sum' + (sd !== sc ? " off" : "") + '" id="je-sum"><span>차변 합계 <b>' + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span></div>" +
+      (editable ? '<button type="button" class="sign" id="sign" aria-label="입력 중인 금액의 부호 바꾸기">± 부호 바꾸기</button>' : "") + "</div>";
   }
   function ansTable(dr, cr) {
     var n = Math.max(dr.length, cr.length), r = "";
@@ -322,6 +323,18 @@
       el.innerHTML = "<span>차변 합계 <b>" + won(sd) + "</b></span><span>대변 합계 <b>" + won(sc) + "</b></span>";
     }
     function rerenderFocus(sel) { onGraded(true); var f = app.querySelector(sel); if (f) f.focus(); }
+    // 휴대폰 숫자 키패드에는 "-"가 없어서, 마지막으로 누른 금액 칸의 부호를 바꾸는 버튼을 둔다
+    var lastAmt = null;
+    root.querySelectorAll('[data-amt],[data-v="supply"],[data-v="tax"]').forEach(function (el) { el.addEventListener("focus", function () { lastAmt = el; }); });
+    var sg = root.querySelector("#sign");
+    if (sg) {
+      sg.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      sg.onclick = function () {
+        if (!lastAmt) { toast("부호를 바꿀 금액 칸을 먼저 눌러 주세요."); return; }
+        var v = lastAmt.value.trim(); if (!v) v = "-"; else v = v.charAt(0) === "-" ? v.slice(1) : "-" + v;
+        lastAmt.value = v; lastAmt.dispatchEvent(new Event("input", { bubbles: true })); lastAmt.focus();
+      };
+    }
     root.querySelectorAll("[data-acc]").forEach(function (inp) {
       var c = cell(inp.getAttribute("data-acc")), box = inp.nextElementSibling;
       function show() {

@@ -195,3 +195,5 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .jef.on{background:var(--brand);opacity:1}
 .jef.right{background:var(--ok);border-color:var(--ok);opacity:1}
 .jef.bad{background:var(--bad);border-color:var(--bad);opacity:1}
+
+.sign{display:block;margin:8px 0 0 auto;border:1px solid var(--line);background:var(--bg);color:var(--sub);border-radius:999px;padding:6px 12px;font-size:.82em;cursor:pointer;min-height:34px}
