@@ -52,9 +52,8 @@
   }
   function renderGate(errMsg) {
     app.innerHTML =
-      '<div style="padding-top:12vh">' + logoHtml() +
+      '<div class="gate" style="padding-top:12vh">' + logoHtml() +
       '<h1 style="margin-top:24px">입장 코드를 입력하세요</h1>' +
-      '<p class="sub">공지방에서 받은 링크로 들어오면 코드 없이 바로 열려요.</p>' +
       '<input id="code" class="input" inputmode="numeric" autocomplete="off" maxlength="12" aria-label="입장 코드">' +
       (errMsg ? '<div class="err" role="alert">' + esc(errMsg) + "</div>" : "") +
       '<div style="margin-top:14px"><button class="btn primary" style="width:100%" id="go">입장</button></div>' + noticeHtml() + "</div>";
@@ -62,7 +61,7 @@
     function go() {
       if (!inp.value.trim()) { renderGate("코드를 입력하세요."); return; }
       if (inp.value.trim() === String(CFG.accessCode)) { sset("localStorage", "passup.code", inp.value.trim()); sset("sessionStorage", "passup.code", inp.value.trim()); start(); }
-      else renderGate("코드가 맞지 않아요. 공지방의 최신 코드를 확인하세요.");
+      else renderGate("코드가 맞지 않아요. 다시 확인해 주세요.");
     }
     document.getElementById("go").onclick = go;
     inp.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
