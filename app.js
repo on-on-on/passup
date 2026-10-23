@@ -5,8 +5,15 @@
   var DATA = null, BY_ID = {}, BY_GROUP = {}, TOPIC = {};
   var S = { screen: "home", session: null, calcOpen: false, calcExpr: "" };
   var CIRC = ["①", "②", "③", "④"];
-  var AREAS = ["재무회계", "원가회계", "부가가치세"];
-  var AREA_SHORT = { "재무회계": "재무회계", "원가회계": "원가회계", "부가가치세": "부가세" };
+  var AREAS = ["재무회계", "원가회계", "부가가치세", "소득세"];
+  var SUBJ = {
+    k1: { name: "전산회계 1급", file: "data/k1.json" },
+    t2: { name: "전산세무 2급", file: "data/t2.json" }
+  };
+  S.subj = (function () { var v = sget0("passup.subj"); return SUBJ[v] ? v : "k1"; })();
+  function sget0(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+  function sfx(base) { return S.subj === "k1" ? base : base + "." + S.subj; }
+  var AREA_SHORT = { "재무회계": "재무회계", "원가회계": "원가회계", "부가가치세": "부가세", "소득세": "소득세" };
   var MAX_NOTE_SET = 15;
 
   // ---------- 저장소(실패해도 동작) ----------
@@ -24,10 +31,10 @@
   function topicOrder(q) { for (var i = 0; i < DATA.topics.length; i++) if (DATA.topics[i].code === q.t) return i; return 999; }
 
   // ---------- 오답노트(이 기기에만 저장) ----------
-  function notes() { var w = sget("localStorage", "passup.wrong"); return w && typeof w === "object" ? w : {}; }
+  function notes() { var w = sget("localStorage", sfx("passup.wrong")); return w && typeof w === "object" ? w : {}; }
   function noteIds() { var w = notes(); return Object.keys(w).filter(function (id) { return BY_ID[id]; }); }
-  function addNote(id) { var w = notes(); if (!w[id]) w[id] = { at: Date.now() }; sset("localStorage", "passup.wrong", w); }
-  function delNote(id) { var w = notes(); if (w[id]) { delete w[id]; sset("localStorage", "passup.wrong", w); } }
+  function addNote(id) { var w = notes(); if (!w[id]) w[id] = { at: Date.now() }; sset("localStorage", sfx("passup.wrong"), w); }
+  function delNote(id) { var w = notes(); if (w[id]) { delete w[id]; sset("localStorage", sfx("passup.wrong"), w); } }
 
   // ---------- 입장 코드 ----------
   function checkAccess() {
@@ -156,7 +163,7 @@
 
   // ---------- 세션 ----------
   // mode: exam(시험 모드) | practice(연습 모드) | note(오답노트 풀이)
-  function saveSession() { if (S.session) sset("sessionStorage", "passup.session", S.session); else sdel("sessionStorage", "passup.session"); }
+  function saveSession() { if (S.session) sset("sessionStorage", sfx("passup.session"), S.session); else sdel("sessionStorage", sfx("passup.session")); }
   function newSession(mode, title, list) {
     S.session = {
       mode: mode, title: title, idx: 0, elapsed: 0, submitted: false,
@@ -166,7 +173,9 @@
     go("quiz");
   }
   function pickExam() {
-    var spec = [["재무회계", 8], ["원가회계", 4], ["부가가치세", 3]], usedG = {}, ids = [];
+    var spec, usedG = {}, ids = [];
+    if (S.subj === "t2") { var nv = 2 + Math.floor(Math.random() * 2); spec = [["재무회계", 5], ["원가회계", 5], ["부가가치세", nv], ["소득세", 5 - nv]]; }
+    else spec = [["재무회계", 8], ["원가회계", 4], ["부가가치세", 3]];
     var slots = []; spec.forEach(function (s) { for (var i = 0; i < s[1]; i++) slots.push(s[0]); });
     var simTarget = 2 + Math.floor(Math.random() * 2), simNeed = {};
     shuffle(slots).slice(0, simTarget).forEach(function (a) { simNeed[a] = (simNeed[a] || 0) + 1; });
@@ -259,8 +268,7 @@
       '<div class="card"><div class="sub">다음 시험</div><div class="big-num">' + esc(d.label) + '</div><div class="sub">' + esc(d.sub) + "</div></div>";
     if (cur) h += '<button class="card menu hero" id="resume"><div class="sub">풀던 문제가 있어요</div><div class="t">' + esc(cur.title) + " 이어서 풀기</div></button>";
     h += '<div class="label">종목</div><div class="seg">' +
-      '<button class="on" aria-pressed="true">' + esc(DATA.subject) + "</button>" +
-      '<button disabled>전산세무 2급 <small>(준비 중)</small></button></div>';
+      Object.keys(SUBJ).map(function (k) { return '<button data-subj="' + k + '" class="' + (k === S.subj ? "on" : "") + '" aria-pressed="' + (k === S.subj) + '">' + esc(SUBJ[k].name) + "</button>"; }).join("") + "</div>";
     h += '<div class="label">풀이 방식</div>' +
       '<button class="card menu mode" id="m-exam"><div class="t">시험 모드</div><div class="sub">15문항 · 다 풀고 한 번에 채점</div></button>' +
       '<button class="card menu mode" id="m-prac"><div class="t">연습 모드</div><div class="sub">15문항 · 한 문제씩 바로 정답과 해설 확인</div></button>' +
@@ -272,6 +280,13 @@
     bind("m-exam", function () { if (confirmNew()) newSession("exam", "시험 모드", pickExam()); });
     bind("m-prac", function () { if (confirmNew()) newSession("practice", "연습 모드", pickExam()); });
     bind("m-note", function () { go("note"); });
+    app.querySelectorAll("[data-subj]").forEach(function (b) {
+      b.onclick = function () {
+        var k = b.getAttribute("data-subj"); if (k === S.subj) return;
+        b.textContent = "불러오는 중…";
+        loadSubject(k, function () { sset("localStorage", "passup.subj", k); restoreSession(); renderHome(); });
+      };
+    });
   }
 
   function renderNote() {
@@ -300,7 +315,7 @@
     bind("back", function () { history.back(); });
     bind("w-same", function () { if (confirmNew()) startNote(false); });
     bind("w-sim", function () { if (confirmNew()) startNote(true); });
-    bind("w-clear", function () { if (confirm("오답노트를 모두 지울까요?")) { sdel("localStorage", "passup.wrong"); renderNote(); } });
+    bind("w-clear", function () { if (confirm("오답노트를 모두 지울까요?")) { sdel("localStorage", sfx("passup.wrong")); renderNote(); } });
   }
 
   function choiceHtml(q, it, reveal) {
@@ -490,20 +505,26 @@
   function bind(id, fn) { var el = document.getElementById(id); if (el) el.onclick = fn; }
 
   // ---------- 시작 ----------
+  function restoreSession() {
+    var saved = sget("sessionStorage", sfx("passup.session"));
+    S.session = (saved && saved.items && saved.mode && saved.items.every(function (x) { return BY_ID[x.id]; })) ? saved : null;
+  }
+  function loadSubject(k, cb) {
+    fetch(SUBJ[k].file, { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (d) {
+      S.subj = k; DATA = d; BY_ID = {}; BY_GROUP = {}; TOPIC = {};
+      d.topics.forEach(function (t) { TOPIC[t.code] = t; });
+      d.questions.forEach(function (q) { BY_ID[q.id] = q; (BY_GROUP[q.g] = BY_GROUP[q.g] || []).push(q); });
+      cb();
+    }).catch(function () {
+      app.innerHTML = '<div class="loading">문제를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요.</div>';
+    });
+  }
   function start() {
     if (sget("localStorage", "passup.big")) document.documentElement.classList.add("big");
-    var saved = sget("sessionStorage", "passup.session");
-    if (saved && saved.items && saved.mode && saved.items.every(function (x) { return BY_ID[x.id]; })) S.session = saved;
+    restoreSession();
     try { history.replaceState({ s: "home" }, ""); } catch (e) {}
     S.screen = "home"; render();
   }
   if (sget("localStorage", "passup.big")) document.documentElement.classList.add("big");
-  fetch("data/k1.json", { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (d) {
-    DATA = d;
-    d.topics.forEach(function (t) { TOPIC[t.code] = t; });
-    d.questions.forEach(function (q) { BY_ID[q.id] = q; (BY_GROUP[q.g] = BY_GROUP[q.g] || []).push(q); });
-    if (checkAccess()) start(); else renderGate();
-  }).catch(function () {
-    app.innerHTML = '<div class="loading">문제를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요.</div>';
-  });
+  loadSubject(S.subj, function () { if (checkAccess()) start(); else renderGate(); });
 })();
