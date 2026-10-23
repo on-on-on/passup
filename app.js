@@ -9,10 +9,14 @@
   var SUBJ = {
     // je: 분개 문제 파일(없으면 null → "준비 중")
     k1: { name: "전산회계 1급", file: "data/k1.json", je: "data/k1_je.json" },
-    t2: { name: "전산세무 2급", file: "data/t2.json", je: null }
+    t2: { name: "전산세무 2급", file: "data/t2.json", je: "data/t2_je.json" }
   };
   var KIND = { gen: "일반전표", vat: "매입매출", fix: "오류수정", close: "결산" };
-  function jeN() { return DATA && DATA.questions.some(function (q) { return q.k === "vat"; }) ? 15 : 10; }
+  function jeSpec() {
+    if (DATA && DATA.spec) return DATA.spec;
+    return DATA && DATA.questions.some(function (q) { return q.k === "vat"; }) ? [["gen", 5], ["vat", 5], ["fix", 2], ["close", 3]] : [["gen", 6], ["vat", 0], ["fix", 2], ["close", 2]];
+  }
+  function jeN() { return jeSpec().reduce(function (t, s) { return t + s[1]; }, 0); }
   S.subj = (function () { var v = sget0("passup.subj"); return SUBJ[v] ? v : "k1"; })();
   S.areaPref = sget0("passup.area") === "je" ? "je" : "th";
   S.area = S.areaPref === "je" && SUBJ[S.subj].je ? "je" : "th";
@@ -463,9 +467,8 @@
   }
   // 분개: 일반전표 6 · 오류수정 2 · 결산 2 (모자라면 다른 문제로 채움), 같은 쌍둥이 그룹 중복 없음
   function pickJE() {
-    var hasVat = DATA.questions.some(function (q) { return q.k === "vat"; });
-    var spec = hasVat ? [["gen", 5], ["vat", 5], ["fix", 2], ["close", 3]] : [["gen", 6], ["vat", 0], ["fix", 2], ["close", 2]], usedG = {}, got = [];
-    var N = hasVat ? 15 : 10;
+    var spec = jeSpec(), usedG = {}, got = [];
+    var N = jeN();
     function take(list, count) {
       shuffle(list).forEach(function (q) { if (count <= 0 || usedG[q.g] || got.indexOf(q) >= 0) return; got.push(q); usedG[q.g] = 1; count--; });
     }
