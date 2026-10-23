@@ -146,3 +146,4 @@ h2{font-size:1.1em;margin:20px 0 8px}
 .notice{background:var(--card);border-radius:12px;padding:10px 12px;font-size:.85em;color:var(--sub);margin:12px 0}
 .gate .logo{justify-content:center}
 .gate h1{text-align:center}
+.seg button.busy{opacity:.6}

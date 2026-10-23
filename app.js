@@ -282,7 +282,7 @@
     app.querySelectorAll("[data-subj]").forEach(function (b) {
       b.onclick = function () {
         var k = b.getAttribute("data-subj"); if (k === S.subj) return;
-        b.textContent = "불러오는 중…";
+        b.classList.add("busy");
         loadSubject(k, function () { sset("localStorage", "passup.subj", k); restoreSession(); renderHome(); });
       };
     });
@@ -508,17 +508,25 @@
     var saved = sget("sessionStorage", sfx("passup.session"));
     S.session = (saved && saved.items && saved.mode && saved.items.every(function (x) { return BY_ID[x.id]; })) ? saved : null;
   }
+  var CACHE = {};
+  function fetchSubject(k) {
+    if (!CACHE[k]) CACHE[k] = fetch(SUBJ[k].file, { cache: "no-cache" }).then(function (r) { return r.json(); });
+    return CACHE[k];
+  }
+  function preloadOthers() { Object.keys(SUBJ).forEach(function (k) { if (k !== S.subj) fetchSubject(k).catch(function () { delete CACHE[k]; }); }); }
   function loadSubject(k, cb) {
-    fetch(SUBJ[k].file, { cache: "no-cache" }).then(function (r) { return r.json(); }).then(function (d) {
+    fetchSubject(k).then(function (d) {
       S.subj = k; DATA = d; BY_ID = {}; BY_GROUP = {}; TOPIC = {};
       d.topics.forEach(function (t) { TOPIC[t.code] = t; });
       d.questions.forEach(function (q) { BY_ID[q.id] = q; (BY_GROUP[q.g] = BY_GROUP[q.g] || []).push(q); });
       cb();
     }).catch(function () {
+      delete CACHE[k];
       app.innerHTML = '<div class="loading">문제를 불러오지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요.</div>';
     });
   }
   function start() {
+    setTimeout(preloadOthers, 800);
     if (sget("localStorage", "passup.big")) document.documentElement.classList.add("big");
     restoreSession();
     try { history.replaceState({ s: "home" }, ""); } catch (e) {}
